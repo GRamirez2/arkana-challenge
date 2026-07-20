@@ -1,8 +1,21 @@
-# Nestjs specific
-/dist
-/node_modules
-/build
+# Build output
+dist
+**/dist
+build
+**/build
+
+# Dependencies
+node_modules
+**/node_modules
+
+# Tool caches
+.vite
+**/.vite
+*.tsbuildinfo
+
+# Temp files
 /tmp
+**/tmp
 
 # Logs
 logs
@@ -19,6 +32,13 @@ lerna-debug.log*
 .env.test
 .env.production
 
+# Frontend environment files
+frontend/.env
+frontend/.env.development
+frontend/.env.test
+frontend/.env.production
+
 # temp directory
 .temp
 .tmp
+

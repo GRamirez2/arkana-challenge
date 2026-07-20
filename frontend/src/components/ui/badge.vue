@@ -1,0 +1,9 @@
+<template>
+  <span
+    class="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-700"
+  >
+    <slot />
+  </span>
+</template>
+
+<script setup lang="ts"></script>
