@@ -1,3 +1,6 @@
+import { createORPCClient } from '@orpc/client';
+import { RPCLink } from '@orpc/client/fetch';
+
 const defaultBaseUrl = 'http://localhost:3000';
 
 export type DiabetesFilters = Partial<{
@@ -62,6 +65,29 @@ export function getApiBaseUrl() {
   );
 }
 
+type DiabetesRpcClient = {
+  diabetes: {
+    overview: () => Promise<{ overview: DatasetOverview }>;
+    timeseries: (input: DiabetesFilters) => Promise<{
+      filters: DiabetesFilters;
+      series: DiabetesSeriesPoint[];
+    }>;
+    chat: (input: {
+      question: string;
+      state?: ConversationState;
+      openAiApiKey?: string;
+    }) => Promise<DiabetesAssistantResponse>;
+  };
+};
+
+function createDiabetesRpcClient(): DiabetesRpcClient {
+  const link = new RPCLink({
+    url: `${getApiBaseUrl()}/rpc`,
+  });
+
+  return createORPCClient<DiabetesRpcClient>(link);
+}
+
 export async function fetchHealth() {
   const response = await fetch(`${getApiBaseUrl()}/health`, {
     headers: {
@@ -77,17 +103,7 @@ export async function fetchHealth() {
 }
 
 export async function fetchDatasetOverview() {
-  const response = await fetch(`${getApiBaseUrl()}/api/diabetes/overview`, {
-    headers: {
-      Accept: 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Dataset overview request failed with ${response.status}`);
-  }
-
-  return response.json() as Promise<{ overview: DatasetOverview }>;
+  return createDiabetesRpcClient().diabetes.overview();
 }
 
 export async function sendDiabetesQuestion(payload: {
@@ -95,18 +111,5 @@ export async function sendDiabetesQuestion(payload: {
   state?: ConversationState;
   openAiApiKey?: string;
 }) {
-  const response = await fetch(`${getApiBaseUrl()}/api/diabetes/chat`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Chat request failed with ${response.status}`);
-  }
-
-  return response.json() as Promise<DiabetesAssistantResponse>;
+  return createDiabetesRpcClient().diabetes.chat(payload);
 }

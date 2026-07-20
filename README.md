@@ -10,11 +10,26 @@ Conversational diabetes explorer for the Arkana Labs take-home.
 
 ## Run locally
 
+Postgres runs in Docker; backend and frontend run directly on your machine with hot-reload. No image rebuilds needed for code changes.
+
+**First time setup:**
+
 ```bash
 npm install
-npm run seed
-npm run dev
+npm run dev:db        # terminal 1 — starts Postgres only
+npm run dev:db:init   # terminal 2 — applies Prisma schema
+npm run seed          # terminal 2 — seeds the database
+npm run dev           # terminal 2 — starts backend (tsx watch) + frontend (Vite HMR)
 ```
+
+**Daily use:**
+
+```bash
+npm run dev:db   # terminal 1
+npm run dev      # terminal 2
+```
+
+Fill in your `OPENAI_API_KEY` in `backend/.env` if you need AI features locally.
 
 Open the frontend at `http://localhost:5173` and the API at `http://localhost:3000`.
 
@@ -24,6 +39,27 @@ Start both apps with:
 
 ```bash
 docker-compose up
+```
+
+If you ran it in the terminal, stop it with `Ctrl+C`. To stop and remove the containers from another terminal, use:
+
+```bash
+docker-compose down
+```
+
+If you change code and want a clean restart that rebuilds the images, use:
+
+```bash
+docker-compose up --build
+```
+
+Useful Docker commands:
+
+```bash
+docker-compose up         # start the full stack
+docker-compose up --build # rebuild images and start the stack
+docker-compose down       # stop and remove containers
+docker-compose logs -f    # follow container logs
 ```
 
 The compose setup builds production images, applies the Prisma schema with a one-shot init container, starts the backend on port `3000`, and serves the compiled frontend through nginx on port `8080`.

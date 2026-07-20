@@ -5,6 +5,8 @@
     "frontend"
   ],
   "scripts": {
+    "dev:db": "docker compose -f docker-compose.dev.yml up",
+    "dev:db:init": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/arkana?schema=public npm run --workspace backend db:push",
     "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
     "dev:backend": "npm run dev --workspace backend",
     "dev:frontend": "npm run dev --workspace frontend",

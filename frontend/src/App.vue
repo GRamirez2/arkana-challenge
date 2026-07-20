@@ -22,7 +22,7 @@ import {
   type DiabetesAssistantResponse,
 } from '@/lib/api';
 
-const starterQuestion = 'Show diagnosed diabetes in California over time';
+const starterQuestion = 'Show diagnosed diabetes in Arkansas over time';
 const openAiApiKeyStorageKey = 'arkana-openai-api-key';
 
 const overview = ref<DatasetOverview | null>(null);
@@ -39,10 +39,41 @@ const apiKeyDraft = ref('');
 const transcript = ref<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
 
 const quickPrompts = [
-  'Show women only',
-  'Narrow to age-adjusted estimates',
+  'Break down by age group',
+  'Compare male vs female, age-adjusted',
   'Compare 2015 to 2020',
-  'Focus on Non-Hispanic Black adults',
+  'Show Non-Hispanic Black adults, age-adjusted',
+];
+
+const questionIdeas = [
+  {
+    category: 'Trends',
+    examples: [
+      'Show Diagnosed Diabetes trend in Texas from 2010 to 2024',
+      'Show Newly Diagnosed Diabetes in California over time',
+    ],
+  },
+  {
+    category: 'Age breakdown',
+    examples: [
+      'Break down diabetes by age group in Florida',
+      'Compare 18-44 vs 65+ diagnosed diabetes rates in Ohio',
+    ],
+  },
+  {
+    category: 'Sex, race or education (age-adjusted)',
+    examples: [
+      'Compare male vs female diagnosed diabetes rates in Georgia',
+      'Show diagnosed diabetes by race, age-adjusted, in New York',
+    ],
+  },
+  {
+    category: 'State & time comparisons',
+    examples: [
+      'Compare Texas and Florida diagnosed diabetes since 2015',
+      'Which states have the highest newly diagnosed diabetes rate in 2023?',
+    ],
+  },
 ];
 
 const activeFilters = computed(() => {
@@ -53,6 +84,7 @@ const activeFilters = computed(() => {
       ([, value]) => value !== undefined && value !== null && value !== ''
     )
     .map(([key, value]) => ({
+      key,
       label: key
         .replace(/([A-Z])/g, ' $1')
         .replace(/^./, (char) => char.toUpperCase()),
@@ -91,13 +123,9 @@ const summaryCards = computed(() => {
 const hasOpenAiApiKey = computed(() => openAiApiKey.value.trim().length > 0);
 
 const sessionModeLabel = computed(() =>
-  hasOpenAiApiKey.value ? 'OpenAI planner enabled' : 'Local fallback planner'
-);
-
-const sessionModeDescription = computed(() =>
   hasOpenAiApiKey.value
-    ? 'This browser session sends your saved API key with chat requests so OpenAI can help plan the next response.'
-    : 'The app keeps working without a key. It uses the local rule-based planner instead of OpenAI.'
+    ? 'Session key detected · OpenAI requested'
+    : 'No session key · local fallback mode'
 );
 
 function readSessionApiKey() {
@@ -155,6 +183,10 @@ async function initializeApp() {
 }
 
 async function askQuestion(promptOverride?: string) {
+  if (loadingAnswer.value) {
+    return;
+  }
+
   const currentQuestion = (promptOverride ?? question.value).trim();
 
   if (!currentQuestion) {
@@ -177,25 +209,54 @@ async function askQuestion(promptOverride?: string) {
     });
 
     assistant.value = result;
-    conversationState.value = result.state;
+    // If the query returned no data, revert filters to what they were before
+    // so bad filters don't carry into the next question.
+    if (result.series.length === 0) {
+      conversationState.value = {
+        ...result.state,
+        filters: conversationState.value?.filters ?? {},
+      };
+      assistant.value = {
+        ...result,
+        appliedFilters: conversationState.value?.filters ?? {},
+      };
+    } else {
+      conversationState.value = result.state;
+    }
     question.value = currentQuestion;
     transcript.value = [
       ...transcript.value,
       { role: 'assistant', text: result.answer },
     ];
   } catch (error) {
-    errorMessage.value =
+    const msg =
       error instanceof Error
         ? error.message
         : 'Unable to run the diabetes query';
+    errorMessage.value = msg;
+    transcript.value = [
+      ...transcript.value,
+      { role: 'assistant', text: `Sorry, I ran into an error: ${msg}` },
+    ];
   } finally {
     loadingAnswer.value = false;
+    question.value = '';
   }
 }
 
 function usePrompt(promptText: string) {
   question.value = promptText;
   void askQuestion(promptText);
+}
+
+function removeFilter(key: string) {
+  if (!conversationState.value) return;
+  const newFilters = { ...conversationState.value.filters };
+  delete newFilters[key as keyof typeof newFilters];
+  conversationState.value = { ...conversationState.value, filters: newFilters };
+  if (assistant.value) {
+    assistant.value = { ...assistant.value, appliedFilters: newFilters };
+  }
 }
 
 function submitApiKey() {
@@ -401,7 +462,7 @@ onMounted(async () => {
       v-else
       class="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-10 px-6 py-10 lg:px-10"
     >
-      <header class="grid gap-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-end">
+      <header class="grid gap-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-start">
         <div class="space-y-5">
           <div class="flex flex-wrap items-center gap-3">
             <Badge class="border-cyan-400/20 bg-cyan-400/10 text-cyan-100">
@@ -410,6 +471,15 @@ onMounted(async () => {
             <Badge class="border-white/10 bg-white/5 text-slate-200">
               {{ sessionModeLabel }}
             </Badge>
+            <Button
+              v-if="hasOpenAiApiKey"
+              variant="outline"
+              size="sm"
+              class="border-white/15 bg-white/5 text-white hover:bg-white/10"
+              @click="clearApiKeyAndRestart"
+            >
+              Clear key and restart
+            </Button>
           </div>
 
           <div class="max-w-4xl space-y-4">
@@ -419,11 +489,6 @@ onMounted(async () => {
               Ask about diabetes trends and the UI will switch between summary,
               chart, and follow-up state.
             </h1>
-            <p class="max-w-3xl text-base leading-8 text-slate-300 sm:text-lg">
-              {{ sessionModeDescription }} The backend keeps a live conversation
-              state, reuses it on follow-ups, and renders the matching trend
-              view from the CSV-backed dataset.
-            </p>
           </div>
         </div>
 
@@ -446,6 +511,24 @@ onMounted(async () => {
               </div>
             </div>
             <div
+              class="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3"
+            >
+              <p
+                class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100/90"
+              >
+                Available indicators
+              </p>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <span
+                  v-for="indicator in overview?.indicators ?? []"
+                  :key="indicator"
+                  class="rounded-full border border-cyan-200/40 bg-slate-950/45 px-3 py-1 text-xs font-medium text-cyan-50"
+                >
+                  {{ indicator }}
+                </span>
+              </div>
+            </div>
+            <div
               class="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50"
             >
               <div class="flex items-center gap-2 font-medium">
@@ -465,35 +548,39 @@ onMounted(async () => {
         <Card
           class="border-white/10 bg-white/6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl"
         >
-          <div class="space-y-6 p-5 sm:p-6">
+          <div class="space-y-3 p-5 sm:p-6">
             <div class="flex items-start justify-between gap-4">
               <div class="space-y-2">
                 <p
-                  class="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200/80"
+                  class="text-xs font-semibold uppercase tracking-[0.22em] text-black"
                 >
-                  Question
+                  Questions:
                 </p>
-                <h2 class="text-2xl font-semibold text-white">
+                <h2 class="text-2xl font-semibold text-slate-700">
                   Ask the dataset
                 </h2>
               </div>
-              <Button
-                v-if="hasOpenAiApiKey"
-                variant="outline"
-                class="border-white/10 bg-white/5 text-white hover:bg-white/10"
-                @click="clearApiKeyAndRestart"
-              >
-                Clear key and restart
-              </Button>
             </div>
 
             <form class="space-y-4" @submit.prevent="askQuestion()">
               <textarea
                 v-model="question"
                 rows="4"
-                class="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-4 text-base leading-7 text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20"
-                placeholder="Ask for a trend, a comparison, or a follow-up filter..."
+                :disabled="loadingAnswer"
+                :aria-busy="loadingAnswer"
+                class="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-4 text-base leading-7 text-white outline-none transition placeholder:text-slate-300 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:border-cyan-300/25 disabled:bg-slate-900/80 disabled:text-slate-400"
+                :placeholder="
+                  loadingAnswer
+                    ? 'Running query... input is temporarily locked.'
+                    : 'Ask for a trend, a comparison, or a follow-up filter...'
+                "
+                @keydown.enter.exact.prevent="askQuestion()"
               />
+
+              <p v-if="loadingAnswer" class="text-sm font-medium text-red-600">
+                Query in progress. You can type again after this response
+                finishes.
+              </p>
 
               <div class="flex flex-wrap gap-3">
                 <Button
@@ -529,19 +616,55 @@ onMounted(async () => {
 
             <div class="space-y-3">
               <p
-                class="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400"
+                class="text-xs font-semibold uppercase tracking-[0.22em] text-black"
               >
-                Quick follow-ups
+                Quick follow-ups:
               </p>
               <div class="flex flex-wrap gap-2">
                 <button
                   v-for="prompt in quickPrompts"
                   :key="prompt"
-                  class="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 transition hover:border-cyan-300/30 hover:bg-cyan-300/10"
+                  class="rounded-full border border-cyan-300/70 bg-cyan-200/75 px-3 py-2 text-sm font-semibold text-slate-900 transition hover:border-cyan-200 hover:bg-cyan-200"
                   @click.prevent="usePrompt(prompt)"
                 >
                   {{ prompt }}
                 </button>
+              </div>
+            </div>
+
+            <div
+              class="space-y-3 rounded-3xl border border-white/10 bg-slate-950/60 p-4"
+            >
+              <div class="flex items-center gap-2">
+                <Sparkles class="h-4 w-4 text-cyan-300" />
+                <p
+                  class="text-xs font-semibold uppercase tracking-[0.22em] text-black"
+                >
+                  Not sure what to ask?
+                </p>
+              </div>
+              <p class="text-xs text-slate-400">
+                One demographic breakdown (age, sex, race, or education) works
+                per question. Sex, race, and education comparisons automatically
+                use age-adjusted rates.
+              </p>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div v-for="idea in questionIdeas" :key="idea.category">
+                  <p class="text-xs font-semibold text-cyan-200">
+                    {{ idea.category }}
+                  </p>
+                  <ul class="mt-1 space-y-1">
+                    <li v-for="example in idea.examples" :key="example">
+                      <button
+                        type="button"
+                        class="text-left text-xs text-slate-300 underline decoration-dotted underline-offset-2 hover:text-cyan-200"
+                        @click.prevent="usePrompt(example)"
+                      >
+                        {{ example }}
+                      </button>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
 
@@ -571,7 +694,7 @@ onMounted(async () => {
 
             <div v-if="activeFilters.length > 0" class="space-y-3">
               <p
-                class="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400"
+                class="text-xs font-semibold uppercase tracking-[0.22em] text-black"
               >
                 Applied filters
               </p>
@@ -579,16 +702,24 @@ onMounted(async () => {
                 <span
                   v-for="filter in activeFilters"
                   :key="`${filter.label}:${filter.value}`"
-                  class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-100"
+                  class="inline-flex items-center gap-1 rounded-full border border-emerald-300/70 bg-emerald-200/75 px-3 py-1 text-xs font-semibold text-slate-900"
                 >
                   {{ filter.label }}: {{ filter.value }}
+                  <button
+                    type="button"
+                    class="ml-1 rounded-full hover:text-red-600"
+                    :aria-label="`Remove ${filter.label} filter`"
+                    @click="removeFilter(filter.key)"
+                  >
+                    &times;
+                  </button>
                 </span>
               </div>
             </div>
 
             <div
               v-if="errorMessage"
-              class="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100"
+              class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
             >
               {{ errorMessage }}
             </div>
@@ -630,7 +761,7 @@ onMounted(async () => {
 
               <div class="space-y-3">
                 <div
-                  v-for="(entry, index) in transcript"
+                  v-for="(entry, index) in [...transcript].reverse()"
                   :key="`${entry.role}-${index}-${entry.text}`"
                   class="rounded-2xl border border-white/10 p-4"
                   :class="

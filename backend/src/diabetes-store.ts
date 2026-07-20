@@ -150,6 +150,26 @@ function chunk<T>(values: T[], chunkSize: number) {
   return chunks;
 }
 
+// Each indicator reports its estimate in multiple incompatible units (e.g. raw
+// head counts alongside percentages), plus a "Median of States" aggregate row.
+// Without pinning a single comparable unit, averaging across years silently
+// blends these together into meaningless numbers. This maps each indicator to
+// the unit that represents a comparable rate/percentage suitable for trends.
+const INDICATOR_DEFAULT_UNIT: Record<string, string> = {
+  'Diagnosed Diabetes': 'Percentage',
+  'Diagnosed Type 1 Diabetes': 'Percentage',
+  'Diagnosed Type 2 Diabetes': 'Percentage',
+  'Newly Diagnosed Diabetes': 'Rate per 1,000',
+};
+
+// Type 1/Type 2 diabetes percentages are reported against two different
+// populations (all adults vs. adults who already have diabetes). Default to
+// the general-population prevalence view unless the caller asks otherwise.
+const INDICATOR_DEFAULT_POPULATION: Record<string, string> = {
+  'Diagnosed Type 1 Diabetes': 'Adults Aged 18+ Years',
+  'Diagnosed Type 2 Diabetes': 'Adults Aged 18+ Years',
+};
+
 function buildWhere(
   filters: DiabetesFilters
 ): Prisma.DiabetesObservationWhereInput {
@@ -163,12 +183,24 @@ function buildWhere(
     year.lte = filters.yearMax;
   }
 
+  const defaultUnit = filters.indicator
+    ? INDICATOR_DEFAULT_UNIT[filters.indicator]
+    : undefined;
+  const defaultPopulation = filters.indicator
+    ? INDICATOR_DEFAULT_POPULATION[filters.indicator]
+    : undefined;
+
   return {
     estimate: { not: null },
     ...(filters.state ? { state: filters.state } : {}),
     ...(filters.topic ? { topic: filters.topic } : {}),
     ...(filters.indicator ? { indicator: filters.indicator } : {}),
-    ...(filters.population ? { population: filters.population } : {}),
+    ...(filters.population
+      ? { population: filters.population }
+      : defaultPopulation
+        ? { population: defaultPopulation }
+        : {}),
+    ...(defaultUnit ? { unit: defaultUnit } : {}),
     ...(filters.age ? { age: filters.age } : {}),
     ...(filters.race ? { race: filters.race } : {}),
     ...(filters.sex ? { sex: filters.sex } : {}),

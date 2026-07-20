@@ -233,6 +233,7 @@ async function planWithOpenAI(
   question: string,
   state: ConversationState | undefined,
   overview: DatasetOverview,
+  vocabulary: FilterVocabulary,
   apiKeyOverride?: string
 ) {
   const apiKey = apiKeyOverride ?? process.env.OPENAI_API_KEY;
@@ -259,9 +260,17 @@ async function planWithOpenAI(
             'Return a JSON object with keys answer, filters, and render.',
             'Use only filter fields that exist in the dataset: state, topic, indicator, population, age, race, sex, education, otherStratification, yearMin, yearMax.',
             'Preserve prior filters unless the new question clearly overrides them.',
-            'Keep answer short and specific.',
-            `Known indicators: ${overview.indicators.slice(0, 8).join(', ')}`,
-            `Known states sample: ${overview.states.slice(0, 8).join(', ')}`,
+            'IMPORTANT: only use exact values from the vocabulary lists below — never guess or invent values.',
+            'Do NOT add a new filter unless the question explicitly names a specific value. For example, "show ages" should NOT add a filter; only "show 18-44" should add age: 18-44.',
+            'DATA STRUCTURE CONSTRAINT: Specific age values (18-44, 45-64, etc.) only exist with race/sex/education all set to "All". Sex/race/education breakdowns only exist with age set to "Age-Adjusted" or "Crude". If user asks for sex/race/education breakdown with a specific age range, automatically switch age to Age-Adjusted.',
+            'Each filter field must be a single string or number value, never an array or object — this dataset only supports viewing one demographic slice at a time. For a "compare X vs Y" question, pick ONE of the values (e.g. just "Male") and mention in the answer that the user can ask about the other value separately.',
+            'The answer field is a short planning note only — actual data insights will be added after the query runs, so do NOT write vague summaries like "summary is provided". Instead briefly confirm which filters you applied.',
+            `Indicators: ${overview.indicators.join(', ')}`,
+            `States: ${overview.states.join(', ')}`,
+            `Race values: ${vocabulary.race.join(', ')}`,
+            `Age values: ${vocabulary.age.join(', ')}`,
+            `Sex values: ${vocabulary.sex.join(', ')}`,
+            `Education values: ${vocabulary.education.join(', ')}`,
           ].join('\n'),
         },
         {
@@ -288,6 +297,68 @@ async function planWithOpenAI(
   return JSON.parse(content) as PlannerResult;
 }
 
+function buildDataAnswer(
+  filters: DiabetesFilters,
+  series: Array<{ year: number; estimate: number | null; rowCount: number }>
+): string {
+  if (series.length === 0) {
+    const filterSummary = Object.entries(filters)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(', ');
+    return (
+      `No data found for the current filters${filterSummary ? ` (${filterSummary})` : ''}.` +
+      ' Try broadening your search or removing a filter.'
+    );
+  }
+
+  const sortedSeries = [...series].sort((a, b) => a.year - b.year);
+  const years = sortedSeries.map((s) => s.year);
+  const estimates = sortedSeries
+    .map((s) => s.estimate)
+    .filter((e): e is number => e !== null);
+
+  const yearRange =
+    years.length > 1 ? `${years[0]}–${years[years.length - 1]}` : `${years[0]}`;
+
+  let trendDesc = '';
+  if (estimates.length >= 2) {
+    const first = estimates[0]!;
+    const last = estimates[estimates.length - 1]!;
+    const diff = last - first;
+    const absPct = Math.abs((diff / first) * 100).toFixed(1);
+    if (Math.abs(diff) < 0.05) {
+      trendDesc = 'The trend is relatively flat over this period.';
+    } else if (diff > 0) {
+      trendDesc = `The estimate rose by ${absPct}% from ${first.toFixed(1)}% to ${last.toFixed(1)}%.`;
+    } else {
+      trendDesc = `The estimate fell by ${absPct}% from ${first.toFixed(1)}% to ${last.toFixed(1)}%.`;
+    }
+  }
+
+  const latest = sortedSeries[sortedSeries.length - 1]!;
+  const latestEst =
+    latest.estimate !== null ? `${latest.estimate.toFixed(1)}%` : 'N/A';
+
+  const filterParts: string[] = [];
+  if (filters.indicator) filterParts.push(filters.indicator);
+  if (filters.state) filterParts.push(`in ${filters.state}`);
+  if (filters.race) filterParts.push(filters.race);
+  if (filters.sex) filterParts.push(filters.sex);
+  if (filters.age) filterParts.push(`age: ${filters.age}`);
+  if (filters.population) filterParts.push(filters.population);
+
+  const subject = filterParts.length
+    ? filterParts.join(', ')
+    : 'the selected view';
+
+  return (
+    `Found ${series.length} yearly data point${series.length !== 1 ? 's' : ''} for ${subject} (${yearRange}). ` +
+    `Most recent estimate (${latest.year}): ${latestEst}. ` +
+    trendDesc
+  ).trim();
+}
+
 export async function answerDiabetesQuestion(input: {
   question: string;
   state: ConversationState | undefined;
@@ -301,16 +372,73 @@ export async function answerDiabetesQuestion(input: {
     input.question,
     input.state,
     overview,
+    vocabulary,
     input.openAiApiKey
   ).catch(() => null);
   const planned =
     plannerResult ??
     heuristicPlan(input.question, input.state, overview, vocabulary);
 
+  // Sanitize planner output before merging into state. The planner's response
+  // is only type-checked by TypeScript at compile time — at runtime (especially
+  // from OpenAI's JSON) fields can arrive as arrays, numbers-as-strings, empty
+  // strings, or null. Any of those would crash Prisma's typed `where` clause
+  // (e.g. sex: ["Male", "Female"] for a "compare" question) and surface as a
+  // 500. Coerce to a single valid string/number per field, or drop it.
+  const TEXT_FILTER_KEYS = [
+    'state',
+    'topic',
+    'indicator',
+    'population',
+    'age',
+    'race',
+    'sex',
+    'education',
+    'otherStratification',
+  ] as const;
+
+  function sanitizeTextValue(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
+    if (Array.isArray(value)) {
+      return sanitizeTextValue(value[0]);
+    }
+    return undefined;
+  }
+
+  function sanitizeYearValue(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    if (Array.isArray(value)) {
+      return sanitizeYearValue(value[0]);
+    }
+    return undefined;
+  }
+
+  const rawFilters = (planned.filters ?? {}) as Record<string, unknown>;
+  const sanitizedFilters: DiabetesFilters = {};
+  for (const key of TEXT_FILTER_KEYS) {
+    const value = sanitizeTextValue(rawFilters[key]);
+    if (value !== undefined) {
+      sanitizedFilters[key] = value;
+    }
+  }
+  const yearMin = sanitizeYearValue(rawFilters.yearMin);
+  if (yearMin !== undefined) sanitizedFilters.yearMin = yearMin;
+  const yearMax = sanitizeYearValue(rawFilters.yearMax);
+  if (yearMax !== undefined) sanitizedFilters.yearMax = yearMax;
+
   const mergedState: ConversationState = {
     filters: {
       ...input.state?.filters,
-      ...planned.filters,
+      ...sanitizedFilters,
     },
     lastQuestion: input.question,
     lastAnswer: planned.answer,
@@ -322,9 +450,7 @@ export async function answerDiabetesQuestion(input: {
   const series = await queryYearlySeries(appliedFilters);
 
   return {
-    answer:
-      planned.answer ??
-      `I found ${series.length} yearly points for the current diabetes view.`,
+    answer: buildDataAnswer(appliedFilters, series),
     state: mergedState,
     render: planned.render ?? {
       type: 'chart',
