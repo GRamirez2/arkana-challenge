@@ -204,52 +204,88 @@ function inferBreakdownDimension(
 ): BreakdownDimension | undefined {
   const normalized = normalizeText(question);
 
-  if (
+  const asksForComparison =
+    normalized.includes('compare') ||
+    normalized.includes('comparison') ||
+    normalized.includes(' versus ') ||
+    normalized.includes(' vs ');
+  const asksForBreakdown =
+    normalized.includes('break down') || normalized.includes('breakdown');
+  const explicitStateBreakdown =
+    normalized.includes('by state') ||
+    normalized.includes('across states') ||
+    normalized.includes('which states');
+  const explicitAgeBreakdown =
     normalized.includes('age group') ||
     normalized.includes('by age') ||
-    normalized.includes('age breakdown')
-  ) {
+    normalized.includes('age breakdown');
+  const explicitSexBreakdown =
+    normalized.includes('by sex') ||
+    normalized.includes('by gender') ||
+    normalized.includes('sex breakdown') ||
+    normalized.includes('gender breakdown');
+  const explicitRaceBreakdown =
+    normalized.includes('by race') ||
+    normalized.includes('by ethnicity') ||
+    normalized.includes('race breakdown') ||
+    normalized.includes('ethnicity breakdown');
+  const explicitEducationBreakdown =
+    normalized.includes('by education') ||
+    normalized.includes('education breakdown');
+  const explicitIndicatorBreakdown =
+    normalized.includes('by indicator') ||
+    normalized.includes('indicator breakdown');
+
+  const hasBreakdownIntent =
+    asksForComparison ||
+    asksForBreakdown ||
+    explicitStateBreakdown ||
+    explicitAgeBreakdown ||
+    explicitSexBreakdown ||
+    explicitRaceBreakdown ||
+    explicitEducationBreakdown ||
+    explicitIndicatorBreakdown;
+
+  if (!hasBreakdownIntent) {
+    return undefined;
+  }
+
+  if (explicitAgeBreakdown) {
     return 'age';
   }
+
   if (
-    normalized.includes('male') ||
-    normalized.includes('female') ||
-    normalized.includes('sex') ||
-    normalized.includes('gender')
+    explicitSexBreakdown ||
+    (asksForComparison &&
+      (normalized.includes('male') ||
+        normalized.includes('female') ||
+        normalized.includes('men') ||
+        normalized.includes('women')))
   ) {
     return 'sex';
   }
-  if (
-    normalized.includes('race') ||
-    normalized.includes('ethnicity') ||
-    normalized.includes('hispanic') ||
-    normalized.includes('non hispanic')
-  ) {
+
+  if (explicitRaceBreakdown) {
     return 'race';
   }
-  if (normalized.includes('education')) {
+
+  if (explicitEducationBreakdown) {
     return 'education';
   }
-  if (
-    normalized.includes('by state') ||
-    normalized.includes('across states') ||
-    normalized.includes('which states')
-  ) {
+
+  if (explicitStateBreakdown) {
     return 'state';
   }
+
   if (
-    normalized.includes('indicator') ||
-    normalized.includes('type 1') ||
-    normalized.includes('type 2')
+    explicitIndicatorBreakdown ||
+    (asksForComparison &&
+      (normalized.includes('type 1') || normalized.includes('type 2')))
   ) {
     return 'indicator';
   }
 
-  if (
-    normalized.includes('break down') ||
-    normalized.includes('breakdown') ||
-    normalized.includes('compare')
-  ) {
+  if (asksForBreakdown || asksForComparison) {
     return 'age';
   }
 
@@ -415,8 +451,30 @@ async function planWithOpenAI(
 
 function buildDataAnswer(
   filters: DiabetesFilters,
-  series: Array<{ year: number; estimate: number | null; rowCount: number }>
+  series: Array<{ year: number; estimate: number | null; rowCount: number }>,
+  valueFormat: ValueFormat
 ): string {
+  const formatEstimate = (value: number) => {
+    if (valueFormat === 'percentage') {
+      return `${value.toFixed(1)}%`;
+    }
+    if (valueFormat === 'rate') {
+      return `${value.toFixed(1)} per 1,000`;
+    }
+    return value.toFixed(1);
+  };
+
+  const formatAbsoluteChange = (value: number) => {
+    const abs = Math.abs(value).toFixed(1);
+    if (valueFormat === 'percentage') {
+      return `${abs} percentage points`;
+    }
+    if (valueFormat === 'rate') {
+      return `${abs} per 1,000`;
+    }
+    return abs;
+  };
+
   if (series.length === 0) {
     const filterSummary = Object.entries(filters)
       .filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -442,19 +500,26 @@ function buildDataAnswer(
     const first = estimates[0]!;
     const last = estimates[estimates.length - 1]!;
     const diff = last - first;
-    const absPct = Math.abs((diff / first) * 100).toFixed(1);
+
     if (Math.abs(diff) < 0.05) {
       trendDesc = 'The trend is relatively flat over this period.';
+    } else if (Math.abs(first) < 1e-9) {
+      trendDesc =
+        diff > 0
+          ? `The estimate increased by ${formatAbsoluteChange(diff)} from ${formatEstimate(first)} to ${formatEstimate(last)}.`
+          : `The estimate decreased by ${formatAbsoluteChange(diff)} from ${formatEstimate(first)} to ${formatEstimate(last)}.`;
     } else if (diff > 0) {
-      trendDesc = `The estimate rose by ${absPct}% from ${first.toFixed(1)}% to ${last.toFixed(1)}%.`;
+      const absPct = Math.abs((diff / first) * 100).toFixed(1);
+      trendDesc = `The estimate rose by ${absPct}% (${formatAbsoluteChange(diff)}) from ${formatEstimate(first)} to ${formatEstimate(last)}.`;
     } else {
-      trendDesc = `The estimate fell by ${absPct}% from ${first.toFixed(1)}% to ${last.toFixed(1)}%.`;
+      const absPct = Math.abs((diff / first) * 100).toFixed(1);
+      trendDesc = `The estimate fell by ${absPct}% (${formatAbsoluteChange(diff)}) from ${formatEstimate(first)} to ${formatEstimate(last)}.`;
     }
   }
 
   const latest = sortedSeries[sortedSeries.length - 1]!;
   const latestEst =
-    latest.estimate !== null ? `${latest.estimate.toFixed(1)}%` : 'N/A';
+    latest.estimate !== null ? formatEstimate(latest.estimate) : 'N/A';
 
   const filterParts: string[] = [];
   if (filters.indicator) filterParts.push(filters.indicator);
@@ -517,10 +582,11 @@ function resolveChartKind(input: {
   question: string;
   seriesLength: number;
   breakdown: BreakdownPayload | null;
-  valueFormat: ValueFormat;
 }): ChartKind {
   const requested = getRequestedChartKind(input.question);
-  const allowPie = input.valueFormat === 'number';
+  const allowPie =
+    input.breakdown !== null &&
+    input.breakdown.data.every((point) => point.estimate >= 0);
 
   if (
     requested === 'pie' &&
@@ -658,7 +724,6 @@ export async function answerDiabetesQuestion(input: {
     question: input.question,
     seriesLength: series.length,
     breakdown,
-    valueFormat,
   });
   const metricLabel = buildMetricLabel(appliedFilters);
   const renderTitle =
@@ -673,7 +738,7 @@ export async function answerDiabetesQuestion(input: {
           breakdown,
           valueFormat,
         })
-      : buildDataAnswer(appliedFilters, series);
+      : buildDataAnswer(appliedFilters, series, valueFormat);
 
   const renderSubtitle =
     breakdown && breakdown.year

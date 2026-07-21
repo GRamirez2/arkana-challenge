@@ -15,10 +15,11 @@ services:
       retries: 10
 
   db-init:
-    image: arkana-backend
+    image: arkana-backend-db-init
     build:
       context: .
       dockerfile: backend/Dockerfile
+      target: db-init
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/arkana?schema=public
@@ -35,6 +36,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      target: runtime
     restart: unless-stopped
     init: true
     environment:

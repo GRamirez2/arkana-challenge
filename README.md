@@ -12,6 +12,10 @@ Conversational diabetes explorer for the Arkana Labs take-home.
 
 ## Docker
 
+> **Version note (used for this challenge):** Docker Desktop `4.82.0` with Docker Engine `29.6.1`.
+> If behavior differs on another setup, first compare outputs of `docker version` and `docker compose version`.
+> Reproducing with these versions is the fastest way to rule out environment mismatch during review.
+
 From your terminal, first change into this repository's root folder:
 
 ```bash
@@ -21,28 +25,28 @@ cd arkana-challenge
 Start both apps with:
 
 ```bash
-docker-compose up
+docker compose up
 ```
 
 If you ran it in the terminal, stop it with `Ctrl+C`. To stop and remove the containers from another terminal, use:
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 If you change code and want a clean restart that rebuilds the images, use:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 Useful Docker commands:
 
 ```bash
-docker-compose up         # start the full stack
-docker-compose up --build # rebuild images and start the stack
-docker-compose down       # stop and remove containers
-docker-compose logs -f    # follow container logs
+docker compose up         # start the full stack
+docker compose up --build # rebuild images and start the stack
+docker compose down       # stop and remove containers
+docker compose logs -f    # follow container logs
 ```
 
 The compose setup builds production images, applies the Prisma schema with a one-shot init container, starts the backend on port `3000`, and serves the compiled frontend through nginx on port `8080`.
@@ -57,7 +61,7 @@ This repository uses npm workspaces (`backend` and `frontend`) with a single loc
 - A workspace package like `frontend` will typically not get its own `frontend/package-lock.json`.
 - Commit the root `package-lock.json` to Git. That is the lockfile that should be reviewed and versioned.
 
-Why Dockerfiles use `npm install` in this repo:
+Why Dockerfiles use `npm ci` in this repo:
 
 - `npm ci` expects a lockfile that matches the package being installed in that build context.
 - Because workspace lock state is centralized at the root, per-folder image builds can fail when they rely on local lockfiles only.
@@ -75,6 +79,7 @@ This keeps Docker builds reproducible while preserving the single-lockfile works
 - `OPENAI_API_KEY`: optional, enables the LLM planner.
 - `OPENAI_MODEL`: optional, defaults to `gpt-4.1-mini`.
 - `DATABASE_URL`: required for the backend, set automatically in Docker Compose.
+- `CORS_ORIGINS`: optional comma-separated browser origin allowlist for backend CORS (for example `https://app.example.com,http://localhost:5173`). Requests without an `Origin` header are still allowed.
 - `VITE_API_BASE_URL`: optional frontend override for the backend URL.
 
 The frontend stores a user-submitted OpenAI key in `sessionStorage` for the current browser tab only. If the user skips the key prompt, the app still works with the local planner.
@@ -227,3 +232,17 @@ The AI planner handles this automatically — just ask naturally.
 - `Switch to Diagnosed Diabetes`
 - `Show the same for California`
 - `Narrow to 2018–2024`
+
+## IDE
+
+I use **Visual Studio Code** to work on this repository.
+
+Helpful extensions for this repo:
+
+- `vue.volar` (`3.3.7`) - Vue 3 language support, type-checking, and template IntelliSense.
+- `dbaeumer.vscode-eslint` (`3.0.34`) - Inline linting for backend and frontend JavaScript/TypeScript.
+- `esbenp.prettier-vscode` (`12.4.0`) - Consistent formatting across the monorepo.
+- `bradlc.vscode-tailwindcss` (`0.16.0`) - Tailwind class IntelliSense for frontend styling.
+- `mikestead.dotenv` (`1.0.1`) - Syntax support for environment variable files.
+- `docker.docker` (`0.18.0`) - Docker and Docker Compose workflow support.
+- `ms-vscode-remote.remote-containers` (`0.459.1`) - Dev container support when developing in containers.

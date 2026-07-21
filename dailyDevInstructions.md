@@ -11,6 +11,7 @@
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/arkana?schema=public
 OPENAI_API_KEY=your-key-here
 OPENAI_MODEL=gpt-4.1-mini
+CORS_ORIGINS=http://localhost:5173,http://localhost:8080
 ```
 
 ---

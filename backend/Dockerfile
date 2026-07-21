@@ -12,7 +12,15 @@ COPY backend/tsconfig.json ./backend/tsconfig.json
 COPY backend/src ./backend/src
 COPY backend/data ./backend/data
 
-RUN npm run build --workspace backend && npm prune --omit=dev
+RUN npm run build --workspace backend
+
+FROM build AS db-init
+
+WORKDIR /app/backend
+
+FROM build AS pruned
+
+RUN npm prune --omit=dev
 
 FROM node:24-alpine AS runtime
 
@@ -20,11 +28,11 @@ WORKDIR /app/backend
 
 ENV NODE_ENV=production
 
-COPY --from=build /app/node_modules /app/node_modules
-COPY --from=build /app/backend/package.json ./package.json
-COPY --from=build /app/backend/dist ./dist
-COPY --from=build /app/backend/prisma ./prisma
-COPY --from=build /app/backend/data ./data
+COPY --from=pruned /app/node_modules /app/node_modules
+COPY --from=pruned /app/backend/package.json ./package.json
+COPY --from=pruned /app/backend/dist ./dist
+COPY --from=pruned /app/backend/prisma ./prisma
+COPY --from=pruned /app/backend/data ./data
 
 USER node
 
