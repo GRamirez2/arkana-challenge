@@ -51,6 +51,20 @@ docker compose logs -f    # follow container logs
 
 The compose setup builds production images, applies the Prisma schema and seeds the dataset with a one-shot init container, starts the backend on port `3000`, and serves the compiled frontend through nginx on port `8080`.
 
+### Why we migrated from `node:alpine`
+
+The backend Docker image previously used `node:alpine`. During image scanning, that base consistently surfaced critical/high OS-level CVEs in this project context.
+
+To reduce scanner findings and improve default hardening, the Dockerfile now uses Chainguard Node base images (`cgr.dev/chainguard/node`).
+
+Why this change:
+
+- Smaller, security-focused runtime surface.
+- More aggressive patch/rebuild cadence for base components.
+- Better supply-chain posture (signed/provenance-oriented images).
+
+This migration was made for security and operational reliability, not because application behavior required a different Node API.
+
 `db-init` seeds only when the table is empty. If you need to force a full reload from CSV, run `npm run seed:reset --workspace backend`.
 
 Once the stack is up, open `http://localhost:8080` to use the app.

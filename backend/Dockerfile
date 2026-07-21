@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM cgr.dev/chainguard/node:latest-dev AS build
 
 WORKDIR /app
 
@@ -20,22 +20,22 @@ WORKDIR /app/backend
 
 FROM build AS pruned
 
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --workspace backend && npm cache clean --force
 
-FROM node:24-alpine AS runtime
+FROM cgr.dev/chainguard/node:latest AS runtime
 
 WORKDIR /app/backend
 
 ENV NODE_ENV=production
 
-COPY --from=pruned /app/node_modules /app/node_modules
-COPY --from=pruned /app/backend/package.json ./package.json
-COPY --from=pruned /app/backend/dist ./dist
-COPY --from=pruned /app/backend/prisma ./prisma
-COPY --from=pruned /app/backend/data ./data
+COPY --from=pruned --chown=nonroot:nonroot /app/node_modules /app/node_modules
+COPY --from=pruned --chown=nonroot:nonroot /app/backend/package.json ./package.json
+COPY --from=pruned --chown=nonroot:nonroot /app/backend/dist ./dist
+COPY --from=pruned --chown=nonroot:nonroot /app/backend/prisma ./prisma
+COPY --from=pruned --chown=nonroot:nonroot /app/backend/data ./data
 
-USER node
+USER nonroot
 
 EXPOSE 3000
 
-CMD ["node", "dist/server.js"]
+CMD ["dist/server.js"]
