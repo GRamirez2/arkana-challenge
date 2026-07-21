@@ -38,12 +38,85 @@ const openAiApiKey = ref('');
 const apiKeyDraft = ref('');
 const transcript = ref<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
 
-const quickPrompts = [
-  'Break down by age group',
-  'Compare male vs female, age-adjusted',
-  'Compare 2015 to 2020',
-  'Show Non-Hispanic Black adults, age-adjusted',
-];
+function getLatestYear() {
+  return overview.value?.yearMax ?? null;
+}
+
+function getComparisonYears() {
+  const latest = getLatestYear();
+  const earliest = overview.value?.yearMin ?? null;
+
+  if (!latest || !earliest) {
+    return null;
+  }
+
+  return {
+    from: Math.max(earliest, latest - 5),
+    to: latest,
+  };
+}
+
+const quickPrompts = computed(() => {
+  const latestYear = getLatestYear();
+  const comparisonYears = getComparisonYears();
+  const filters =
+    assistant.value?.appliedFilters ?? conversationState.value?.filters ?? {};
+  const breakdownDimension = assistant.value?.breakdown?.dimension;
+  const hasStateFilter = Boolean(filters.state);
+
+  const withYear = (text: string) =>
+    latestYear ? text.replace('{year}', String(latestYear)) : text;
+  const turnCount = conversationState.value?.turnCount ?? 0;
+  const stateExtremesPrompt = withYear(
+    turnCount % 2 === 0
+      ? 'Which states are highest for this in {year}?'
+      : 'Which states are lowest for this in {year}?'
+  );
+
+  const basePrompts = [
+    withYear('Show the latest year only ({year})'),
+    comparisonYears
+      ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
+      : 'Compare 2015 to 2020',
+    'Break this down by age group',
+    'Compare male vs female, age-adjusted',
+    'Break this down by race/ethnicity, age-adjusted',
+    stateExtremesPrompt,
+  ];
+
+  if (
+    breakdownDimension === 'age' ||
+    breakdownDimension === 'sex' ||
+    breakdownDimension === 'race' ||
+    breakdownDimension === 'education'
+  ) {
+    return [
+      withYear('Show the latest year only ({year})'),
+      comparisonYears
+        ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
+        : 'Compare 2015 to 2020',
+      'Break this down by another demographic group',
+      'Compare male vs female, age-adjusted',
+      'Break this down by race/ethnicity, age-adjusted',
+      stateExtremesPrompt,
+    ];
+  }
+
+  if (breakdownDimension === 'state' || hasStateFilter) {
+    return [
+      withYear('Show the latest year only ({year})'),
+      comparisonYears
+        ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
+        : 'Compare 2015 to 2020',
+      'Break this down by age group',
+      'Compare male vs female, age-adjusted',
+      'Break this down by race/ethnicity, age-adjusted',
+      stateExtremesPrompt,
+    ];
+  }
+
+  return basePrompts;
+});
 
 const questionIdeas = [
   {
@@ -569,7 +642,7 @@ onMounted(async () => {
                 rows="4"
                 :disabled="loadingAnswer"
                 :aria-busy="loadingAnswer"
-                class="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-4 text-base leading-7 text-white outline-none transition placeholder:text-slate-300 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:border-cyan-300/25 disabled:bg-slate-900/80 disabled:text-slate-400"
+                class="w-full rounded-3xl border border-white/10 bg-black px-4 py-4 text-base leading-7 text-white outline-none transition placeholder:text-white/70 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:border-cyan-300/25 disabled:bg-black/80 disabled:text-white/60"
                 :placeholder="
                   loadingAnswer
                     ? 'Running query... input is temporarily locked.'
@@ -587,7 +660,7 @@ onMounted(async () => {
                 <Button
                   type="submit"
                   :disabled="loadingAnswer"
-                  class="min-w-[180px]"
+                  class="w-full !bg-green-600 !text-white hover:!bg-green-500"
                 >
                   <RefreshCcw
                     class="mr-2 h-4 w-4"
@@ -615,16 +688,18 @@ onMounted(async () => {
               </div>
             </form>
 
-            <div class="rounded-3xl border border-white/10 bg-slate-950/60 p-4">
+            <div
+              class="rounded-3xl border border-white/10 bg-black p-4 text-white"
+            >
               <div
-                class="flex items-center gap-2 text-sm font-medium text-slate-200"
+                class="flex items-center gap-2 text-sm font-medium text-white"
               >
                 <Activity class="h-4 w-4 text-cyan-300" />
                 Current conversation state
               </div>
               <div
                 v-if="conversationState"
-                class="mt-4 space-y-3 text-sm text-slate-300"
+                class="mt-4 space-y-3 text-sm text-white/85"
               >
                 <p>Turns: {{ conversationState.turnCount }}</p>
                 <p v-if="conversationState.lastQuestion">
@@ -634,7 +709,7 @@ onMounted(async () => {
                   Last answer: {{ conversationState.lastAnswer }}
                 </p>
               </div>
-              <p v-else class="mt-4 text-sm text-slate-400">
+              <p v-else class="mt-4 text-sm text-white/75">
                 Ask a question to create the first state snapshot.
               </p>
             </div>
@@ -668,7 +743,7 @@ onMounted(async () => {
                   Not sure what to ask?
                 </p>
               </div>
-              <p class="text-xs text-slate-400">
+              <p class="text-xs text-black">
                 One demographic breakdown (age, sex, race, or education) works
                 per question. Sex, race, and education comparisons automatically
                 use age-adjusted rates.
@@ -682,7 +757,7 @@ onMounted(async () => {
                     <li v-for="example in idea.examples" :key="example">
                       <button
                         type="button"
-                        class="text-left text-xs text-slate-300 underline decoration-dotted underline-offset-2 hover:text-cyan-200"
+                        class="text-left text-xs text-black underline decoration-dotted underline-offset-2 hover:text-slate-700"
                         @click.prevent="usePrompt(example)"
                       >
                         {{ example }}

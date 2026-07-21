@@ -94,6 +94,12 @@ export type FilterVocabulary = {
   education: string[];
 };
 
+/**
+ * Converts a CSV field into a number when possible.
+ *
+ * Empty strings, non-string values, and non-finite numbers are normalized to
+ * `null` so downstream Prisma writes can treat the field as missing data.
+ */
 function toNullableNumber(value: unknown) {
   if (typeof value !== 'string') {
     return null;
@@ -108,6 +114,12 @@ function toNullableNumber(value: unknown) {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+/**
+ * Normalizes a raw CSV field to trimmed text.
+ *
+ * Non-string values are treated as empty strings so parsing stays defensive
+ * against unexpected input shapes.
+ */
 function toText(value: unknown) {
   if (typeof value !== 'string') {
     return '';
@@ -116,11 +128,23 @@ function toText(value: unknown) {
   return value.trim();
 }
 
+/**
+ * Converts a raw CSV field into optional text.
+ *
+ * This wraps {@link toText} and preserves meaningful values while collapsing
+ * blank strings to `null`.
+ */
 function toNullableText(value: unknown) {
   const text = toText(value);
   return text.length > 0 ? text : null;
 }
 
+/**
+ * Maps one CSV row into the canonical diabetes observation shape.
+ *
+ * The parser trims text, coerces numeric fields, and leaves missing numeric
+ * values as `null` so the data can be stored safely in Prisma.
+ */
 function parseObservation(record: Record<string, string>): DiabetesObservation {
   return {
     state: toText(record.State),
@@ -143,6 +167,12 @@ function parseObservation(record: Record<string, string>): DiabetesObservation {
   };
 }
 
+/**
+ * Reads the bundled dataset from disk and parses every row.
+ *
+ * This is the single ingestion path used by seed operations, so the parsing
+ * rules stay centralized in one place.
+ */
 function loadObservationsFromCsv() {
   const fileContents = readFileSync(csvPath, 'utf8');
   const rows = parse(fileContents, {
@@ -154,6 +184,12 @@ function loadObservationsFromCsv() {
   return rows.map(parseObservation);
 }
 
+/**
+ * Splits an array into fixed-size batches.
+ *
+ * Prisma `createMany` calls use this to keep bulk inserts under a manageable
+ * size.
+ */
 function chunk<T>(values: T[], chunkSize: number) {
   const chunks: T[][] = [];
 
@@ -184,6 +220,12 @@ const INDICATOR_DEFAULT_POPULATION: Record<string, string> = {
   'Diagnosed Type 2 Diabetes': 'Adults Aged 18+ Years',
 };
 
+/**
+ * Converts user-provided filters into a Prisma `where` clause.
+ *
+ * The helper also injects indicator-specific defaults for unit and population
+ * so comparisons stay consistent instead of mixing incompatible rows.
+ */
 function buildWhere(
   filters: DiabetesFilters
 ): Prisma.DiabetesObservationWhereInput {
@@ -226,6 +268,12 @@ function buildWhere(
   };
 }
 
+/**
+ * Returns a copy of the current filter set without one key.
+ *
+ * This is used when building alternate queries that need to relax a single
+ * dimension while keeping the rest of the user selection intact.
+ */
 function withFilterRemoved(
   filters: DiabetesFilters,
   key: keyof DiabetesFilters
@@ -235,6 +283,12 @@ function withFilterRemoved(
   return next;
 }
 
+/**
+ * Extracts the metric metadata that should accompany a query result.
+ *
+ * Reviewers can use this to see which indicator, unit, and population the
+ * current filters imply before the data is rendered.
+ */
 export function getMetricContext(filters: DiabetesFilters) {
   const indicator = filters.indicator;
   const unit = indicator ? INDICATOR_DEFAULT_UNIT[indicator] : undefined;
@@ -251,6 +305,12 @@ export function getMetricContext(filters: DiabetesFilters) {
   };
 }
 
+/**
+ * Aggregates observations by one categorical dimension.
+ *
+ * Each branch groups by the requested field and returns averages plus row
+ * counts so the caller can render a breakdown chart or summary table.
+ */
 async function queryBreakdownByDimension(
   where: Prisma.DiabetesObservationWhereInput,
   dimension: BreakdownDimension
@@ -303,6 +363,12 @@ async function queryBreakdownByDimension(
   }
 }
 
+/**
+ * Reads the label value for a specific breakdown dimension.
+ *
+ * This is a small accessor used when converting grouped Prisma rows into the
+ * flatter label/value format consumed by the API and UI.
+ */
 function getDimensionValue(
   row:
     | { age: string }
@@ -329,6 +395,12 @@ function getDimensionValue(
   }
 }
 
+/**
+ * Inserts parsed observations in batches.
+ *
+ * The batch size keeps the seed process efficient while avoiding oversized
+ * database writes.
+ */
 async function insertObservations(observations: DiabetesObservation[]) {
   for (const observationChunk of chunk(observations, 500)) {
     await prisma.diabetesObservation.createMany({
@@ -337,6 +409,12 @@ async function insertObservations(observations: DiabetesObservation[]) {
   }
 }
 
+/**
+ * Collects the sorted distinct values for one categorical field.
+ *
+ * The vocabulary endpoint uses this to expose the allowed filter values from
+ * the live dataset instead of maintaining a separate hard-coded list.
+ */
 async function readDistinctValues(
   field: 'indicator' | 'state' | 'topic' | 'age' | 'race' | 'sex' | 'education'
 ) {
@@ -351,6 +429,12 @@ async function readDistinctValues(
   return rows.map((row) => row[field]);
 }
 
+/**
+ * Loads the bundled CSV into the database.
+ *
+ * When `reset` is true, the current table contents are cleared first so the
+ * import replaces any existing data instead of appending to it.
+ */
 export async function seedDatabaseFromCsv(options: { reset?: boolean } = {}) {
   if (options.reset) {
     await prisma.diabetesObservation.deleteMany();
@@ -364,6 +448,34 @@ export async function seedDatabaseFromCsv(options: { reset?: boolean } = {}) {
   };
 }
 
+/**
+ * Seeds the database only when it does not already contain rows.
+ *
+ * This is the safe startup path for environments that should avoid
+ * re-importing the CSV on every boot.
+ */
+export async function seedDatabaseIfEmpty() {
+  const rowCount = await prisma.diabetesObservation.count();
+  if (rowCount > 0) {
+    return {
+      rowCount,
+      seeded: false,
+    };
+  }
+
+  const seeded = await seedDatabaseFromCsv();
+  return {
+    rowCount: seeded.rowCount,
+    seeded: true,
+  };
+}
+
+/**
+ * Verifies that the database is reachable and populated.
+ *
+ * The function throws a targeted error when the schema is missing or when the
+ * table exists but no seed data has been loaded yet.
+ */
 export async function ensureDatabaseReady() {
   let rowCount: number;
   try {
@@ -375,7 +487,9 @@ export async function ensureDatabaseReady() {
   }
 
   if (rowCount === 0) {
-    return seedDatabaseFromCsv();
+    throw new Error(
+      'Database has no rows. Run `npm run seed` (or start with Docker Compose so db-init seeds automatically).'
+    );
   }
 
   return { rowCount };
