@@ -78,8 +78,12 @@ const quickPrompts = computed(() => {
     comparisonYears
       ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
       : 'Compare 2015 to 2020',
+    comparisonYears
+      ? `How did the 25-44 age group change from ${comparisonYears.from} to ${comparisonYears.to}?`
+      : 'How did the 25-44 age group change over time?',
     'Break this down by age group',
     'Compare male vs female, age-adjusted',
+    'How has the 65+ age group trended over time?',
     'Break this down by race/ethnicity, age-adjusted',
     stateExtremesPrompt,
   ];
@@ -95,8 +99,12 @@ const quickPrompts = computed(() => {
       comparisonYears
         ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
         : 'Compare 2015 to 2020',
+      comparisonYears
+        ? `How did the 18-44 age group change from ${comparisonYears.from} to ${comparisonYears.to}?`
+        : 'How did the 18-44 age group change over time?',
       'Break this down by another demographic group',
       'Compare male vs female, age-adjusted',
+      'How has the 65+ age group trended over time?',
       'Break this down by race/ethnicity, age-adjusted',
       stateExtremesPrompt,
     ];
