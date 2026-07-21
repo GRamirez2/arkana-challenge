@@ -40,4 +40,4 @@ USER 65532:65532
 
 EXPOSE 3000
 
-CMD ["dist/server.js"]
+CMD ["node", "dist/server.js"]

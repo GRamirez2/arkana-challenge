@@ -79,8 +79,8 @@ const quickPrompts = computed(() => {
       ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
       : 'Compare 2015 to 2020',
     comparisonYears
-      ? `How did the 25-44 age group change from ${comparisonYears.from} to ${comparisonYears.to}?`
-      : 'How did the 25-44 age group change over time?',
+      ? `How did the 18-44 age group change from ${comparisonYears.from} to ${comparisonYears.to}?`
+      : 'How did the 18-44 age group change over time?',
     'Break this down by age group',
     'Compare male vs female, age-adjusted',
     'How has the 65+ age group trended over time?',
@@ -746,12 +746,12 @@ onMounted(async () => {
               <div class="flex items-center gap-2">
                 <Sparkles class="h-4 w-4 text-cyan-300" />
                 <p
-                  class="text-xs font-semibold uppercase tracking-[0.22em] text-black"
+                  class="text-xs font-semibold uppercase tracking-[0.22em] text-slate-300"
                 >
                   Not sure what to ask?
                 </p>
               </div>
-              <p class="text-xs text-black">
+              <p class="text-xs text-slate-400">
                 One demographic breakdown (age, sex, race, or education) works
                 per question. Sex, race, and education comparisons automatically
                 use age-adjusted rates.
@@ -765,7 +765,7 @@ onMounted(async () => {
                     <li v-for="example in idea.examples" :key="example">
                       <button
                         type="button"
-                        class="text-left text-xs text-black underline decoration-dotted underline-offset-2 hover:text-slate-700"
+                        class="text-left text-xs text-slate-300 underline decoration-dotted underline-offset-2 hover:text-slate-100"
                         @click.prevent="usePrompt(example)"
                       >
                         {{ example }}
