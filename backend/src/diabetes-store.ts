@@ -14,8 +14,6 @@ const csvPath = join(
 
 const prisma = new PrismaClient();
 
-let seedIfEmptyPromise: Promise<{ rowCount: number }> | null = null;
-
 export type DiabetesObservation = {
   state: string;
   year: number;
@@ -366,22 +364,20 @@ export async function seedDatabaseFromCsv(options: { reset?: boolean } = {}) {
   };
 }
 
-async function seedIfDatabaseEmpty() {
-  if (!seedIfEmptyPromise) {
-    seedIfEmptyPromise = (async () => {
-      // Re-check under the guard so only one caller decides whether to seed.
-      const rowCount = await prisma.diabetesObservation.count();
-      if (rowCount > 0) {
-        return { rowCount };
-      }
-
-      return seedDatabaseFromCsv();
-    })().finally(() => {
-      seedIfEmptyPromise = null;
-    });
+export async function seedDatabaseIfEmpty() {
+  const rowCount = await prisma.diabetesObservation.count();
+  if (rowCount > 0) {
+    return {
+      rowCount,
+      seeded: false,
+    };
   }
 
-  return seedIfEmptyPromise;
+  const seeded = await seedDatabaseFromCsv();
+  return {
+    rowCount: seeded.rowCount,
+    seeded: true,
+  };
 }
 
 export async function ensureDatabaseReady() {
@@ -395,7 +391,9 @@ export async function ensureDatabaseReady() {
   }
 
   if (rowCount === 0) {
-    return seedIfDatabaseEmpty();
+    throw new Error(
+      'Database has no rows. Run `npm run seed` (or start with Docker Compose so db-init seeds automatically).'
+    );
   }
 
   return { rowCount };

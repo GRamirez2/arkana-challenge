@@ -49,7 +49,9 @@ docker compose down       # stop and remove containers
 docker compose logs -f    # follow container logs
 ```
 
-The compose setup builds production images, applies the Prisma schema with a one-shot init container, starts the backend on port `3000`, and serves the compiled frontend through nginx on port `8080`.
+The compose setup builds production images, applies the Prisma schema and seeds the dataset with a one-shot init container, starts the backend on port `3000`, and serves the compiled frontend through nginx on port `8080`.
+
+`db-init` seeds only when the table is empty. If you need to force a full reload from CSV, run `npm run seed:reset --workspace backend`.
 
 Once the stack is up, open `http://localhost:8080` to use the app.
 

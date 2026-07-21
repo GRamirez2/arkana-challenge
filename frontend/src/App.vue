@@ -38,12 +38,85 @@ const openAiApiKey = ref('');
 const apiKeyDraft = ref('');
 const transcript = ref<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
 
-const quickPrompts = [
-  'Break down by age group',
-  'Compare male vs female, age-adjusted',
-  'Compare 2015 to 2020',
-  'Show Non-Hispanic Black adults, age-adjusted',
-];
+function getLatestYear() {
+  return overview.value?.yearMax ?? null;
+}
+
+function getComparisonYears() {
+  const latest = getLatestYear();
+  const earliest = overview.value?.yearMin ?? null;
+
+  if (!latest || !earliest) {
+    return null;
+  }
+
+  return {
+    from: Math.max(earliest, latest - 5),
+    to: latest,
+  };
+}
+
+const quickPrompts = computed(() => {
+  const latestYear = getLatestYear();
+  const comparisonYears = getComparisonYears();
+  const filters =
+    assistant.value?.appliedFilters ?? conversationState.value?.filters ?? {};
+  const breakdownDimension = assistant.value?.breakdown?.dimension;
+  const hasStateFilter = Boolean(filters.state);
+
+  const withYear = (text: string) =>
+    latestYear ? text.replace('{year}', String(latestYear)) : text;
+  const turnCount = conversationState.value?.turnCount ?? 0;
+  const stateExtremesPrompt = withYear(
+    turnCount % 2 === 0
+      ? 'Which states are highest for this in {year}?'
+      : 'Which states are lowest for this in {year}?'
+  );
+
+  const basePrompts = [
+    withYear('Show the latest year only ({year})'),
+    comparisonYears
+      ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
+      : 'Compare 2015 to 2020',
+    'Break this down by age group',
+    'Compare male vs female, age-adjusted',
+    'Break this down by race/ethnicity, age-adjusted',
+    stateExtremesPrompt,
+  ];
+
+  if (
+    breakdownDimension === 'age' ||
+    breakdownDimension === 'sex' ||
+    breakdownDimension === 'race' ||
+    breakdownDimension === 'education'
+  ) {
+    return [
+      withYear('Show the latest year only ({year})'),
+      comparisonYears
+        ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
+        : 'Compare 2015 to 2020',
+      'Break this down by another demographic group',
+      'Compare male vs female, age-adjusted',
+      'Break this down by race/ethnicity, age-adjusted',
+      stateExtremesPrompt,
+    ];
+  }
+
+  if (breakdownDimension === 'state' || hasStateFilter) {
+    return [
+      withYear('Show the latest year only ({year})'),
+      comparisonYears
+        ? `Compare ${comparisonYears.from} to ${comparisonYears.to}`
+        : 'Compare 2015 to 2020',
+      'Break this down by age group',
+      'Compare male vs female, age-adjusted',
+      'Break this down by race/ethnicity, age-adjusted',
+      stateExtremesPrompt,
+    ];
+  }
+
+  return basePrompts;
+});
 
 const questionIdeas = [
   {
@@ -668,7 +741,7 @@ onMounted(async () => {
                   Not sure what to ask?
                 </p>
               </div>
-              <p class="text-xs text-slate-400">
+              <p class="text-xs text-black">
                 One demographic breakdown (age, sex, race, or education) works
                 per question. Sex, race, and education comparisons automatically
                 use age-adjusted rates.
@@ -682,7 +755,7 @@ onMounted(async () => {
                     <li v-for="example in idea.examples" :key="example">
                       <button
                         type="button"
-                        class="text-left text-xs text-slate-300 underline decoration-dotted underline-offset-2 hover:text-cyan-200"
+                        class="text-left text-xs text-black underline decoration-dotted underline-offset-2 hover:text-slate-700"
                         @click.prevent="usePrompt(example)"
                       >
                         {{ example }}

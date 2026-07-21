@@ -28,7 +28,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: npm run db:push
+    command: sh -c "npm run db:push && npm run seed"
     restart: 'no'
 
   backend:
