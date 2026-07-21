@@ -211,7 +211,8 @@ async function askQuestion(promptOverride?: string) {
     assistant.value = result;
     // If the query returned no data, revert filters to what they were before
     // so bad filters don't carry into the next question.
-    if (result.series.length === 0) {
+    const hasBreakdownData = (result.breakdown?.data.length ?? 0) > 0;
+    if (result.series.length === 0 && !hasBreakdownData) {
       conversationState.value = {
         ...result.state,
         filters: conversationState.value?.filters ?? {},
@@ -486,8 +487,8 @@ onMounted(async () => {
             <h1
               class="text-4xl font-semibold tracking-tight text-white sm:text-6xl"
             >
-              Ask about diabetes trends and the UI will switch between summary,
-              chart, and follow-up state.
+              Ask natural-language questions about U.S. diabetes data and
+              explore trend charts with context-aware follow-ups.
             </h1>
           </div>
         </div>
@@ -556,7 +557,7 @@ onMounted(async () => {
                 >
                   Questions:
                 </p>
-                <h2 class="text-2xl font-semibold text-slate-700">
+                <h2 class="text-2xl font-semibold text-slate-800">
                   Ask the dataset
                 </h2>
               </div>
@@ -624,7 +625,7 @@ onMounted(async () => {
                 <button
                   v-for="prompt in quickPrompts"
                   :key="prompt"
-                  class="rounded-full border border-cyan-300/70 bg-cyan-200/75 px-3 py-2 text-sm font-semibold text-slate-900 transition hover:border-cyan-200 hover:bg-cyan-200"
+                  class="rounded-full border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-200"
                   @click.prevent="usePrompt(prompt)"
                 >
                   {{ prompt }}
@@ -702,7 +703,7 @@ onMounted(async () => {
                 <span
                   v-for="filter in activeFilters"
                   :key="`${filter.label}:${filter.value}`"
-                  class="inline-flex items-center gap-1 rounded-full border border-emerald-300/70 bg-emerald-200/75 px-3 py-1 text-xs font-semibold text-slate-900"
+                  class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800"
                 >
                   {{ filter.label }}: {{ filter.value }}
                   <button
@@ -733,9 +734,15 @@ onMounted(async () => {
         <div class="space-y-6">
           <SeriesChart
             :series="assistant?.series ?? []"
+            :breakdown="assistant?.breakdown ?? null"
+            :chart-kind="assistant?.render.chartKind ?? 'line'"
+            :metric-label="assistant?.render.metricLabel ?? 'Estimated value'"
+            :value-format="assistant?.render.valueFormat ?? 'number'"
             :title="assistant?.render.title ?? 'Diabetes trend over time'"
             :subtitle="
-              assistant?.answer ?? 'Run a query to see the chart update.'
+              assistant?.render.subtitle ??
+              assistant?.answer ??
+              'Run a query to see the chart update.'
             "
           />
 

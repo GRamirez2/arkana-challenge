@@ -31,6 +31,20 @@ export type DiabetesSeriesPoint = {
   rowCount: number;
 };
 
+export type BreakdownDimension =
+  | 'age'
+  | 'sex'
+  | 'race'
+  | 'education'
+  | 'state'
+  | 'indicator';
+
+export type DiabetesBreakdownPoint = {
+  label: string;
+  estimate: number;
+  rowCount: number;
+};
+
 export type DatasetOverview = {
   rowCount: number;
   yearMin: number | null;
@@ -53,8 +67,17 @@ export type DiabetesAssistantResponse = {
   render: {
     type: 'chart' | 'table';
     title: string;
+    chartKind: 'line' | 'bar' | 'pie';
+    metricLabel: string;
+    valueFormat: 'percentage' | 'rate' | 'number';
+    subtitle?: string;
   };
   series: DiabetesSeriesPoint[];
+  breakdown: {
+    dimension: BreakdownDimension;
+    year: number | null;
+    data: DiabetesBreakdownPoint[];
+  } | null;
   appliedFilters: DiabetesFilters;
 };
 

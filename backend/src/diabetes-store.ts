@@ -54,6 +54,20 @@ export type DiabetesSeriesPoint = {
   rowCount: number;
 };
 
+export type BreakdownDimension =
+  | 'age'
+  | 'sex'
+  | 'race'
+  | 'education'
+  | 'state'
+  | 'indicator';
+
+export type DiabetesBreakdownPoint = {
+  label: string;
+  estimate: number;
+  rowCount: number;
+};
+
 export type DatasetOverview = {
   rowCount: number;
   yearMin: number | null;
@@ -212,6 +226,109 @@ function buildWhere(
   };
 }
 
+function withFilterRemoved(
+  filters: DiabetesFilters,
+  key: keyof DiabetesFilters
+) {
+  const next = { ...filters };
+  delete next[key];
+  return next;
+}
+
+export function getMetricContext(filters: DiabetesFilters) {
+  const indicator = filters.indicator;
+  const unit = indicator ? INDICATOR_DEFAULT_UNIT[indicator] : undefined;
+  const population = filters.population
+    ? filters.population
+    : indicator
+      ? INDICATOR_DEFAULT_POPULATION[indicator]
+      : undefined;
+
+  return {
+    indicator,
+    unit,
+    population,
+  };
+}
+
+async function queryBreakdownByDimension(
+  where: Prisma.DiabetesObservationWhereInput,
+  dimension: BreakdownDimension
+) {
+  switch (dimension) {
+    case 'age':
+      return prisma.diabetesObservation.groupBy({
+        by: ['age'],
+        where,
+        _avg: { estimate: true },
+        _count: { _all: true },
+      });
+    case 'sex':
+      return prisma.diabetesObservation.groupBy({
+        by: ['sex'],
+        where,
+        _avg: { estimate: true },
+        _count: { _all: true },
+      });
+    case 'race':
+      return prisma.diabetesObservation.groupBy({
+        by: ['race'],
+        where,
+        _avg: { estimate: true },
+        _count: { _all: true },
+      });
+    case 'education':
+      return prisma.diabetesObservation.groupBy({
+        by: ['education'],
+        where,
+        _avg: { estimate: true },
+        _count: { _all: true },
+      });
+    case 'state':
+      return prisma.diabetesObservation.groupBy({
+        by: ['state'],
+        where,
+        _avg: { estimate: true },
+        _count: { _all: true },
+      });
+    case 'indicator':
+      return prisma.diabetesObservation.groupBy({
+        by: ['indicator'],
+        where,
+        _avg: { estimate: true },
+        _count: { _all: true },
+      });
+    default:
+      return [];
+  }
+}
+
+function getDimensionValue(
+  row:
+    | { age: string }
+    | { sex: string }
+    | { race: string }
+    | { education: string }
+    | { state: string }
+    | { indicator: string },
+  dimension: BreakdownDimension
+) {
+  switch (dimension) {
+    case 'age':
+      return (row as { age: string }).age;
+    case 'sex':
+      return (row as { sex: string }).sex;
+    case 'race':
+      return (row as { race: string }).race;
+    case 'education':
+      return (row as { education: string }).education;
+    case 'state':
+      return (row as { state: string }).state;
+    case 'indicator':
+      return (row as { indicator: string }).indicator;
+  }
+}
+
 async function insertObservations(observations: DiabetesObservation[]) {
   for (const observationChunk of chunk(observations, 500)) {
     await prisma.diabetesObservation.createMany({
@@ -248,7 +365,14 @@ export async function seedDatabaseFromCsv(options: { reset?: boolean } = {}) {
 }
 
 export async function ensureDatabaseReady() {
-  const rowCount = await prisma.diabetesObservation.count();
+  let rowCount: number;
+  try {
+    rowCount = await prisma.diabetesObservation.count();
+  } catch {
+    throw new Error(
+      'Database table not found. Run `npm run dev:db:init` to apply the schema, then `npm run seed` to load the data.'
+    );
+  }
 
   if (rowCount === 0) {
     return seedDatabaseFromCsv();
@@ -335,4 +459,78 @@ export async function queryYearlySeries(
         : null,
     rowCount: row._count._all,
   }));
+}
+
+export async function queryCategoryBreakdown(input: {
+  filters: DiabetesFilters;
+  dimension: BreakdownDimension;
+  year?: number;
+}): Promise<{
+  dimension: BreakdownDimension;
+  year: number | null;
+  data: DiabetesBreakdownPoint[];
+}> {
+  await ensureDatabaseReady();
+
+  const filtersWithoutDimension = withFilterRemoved(
+    input.filters,
+    input.dimension
+  );
+  const baseWhere = buildWhere(filtersWithoutDimension);
+
+  let targetYear = input.year;
+  if (targetYear === undefined) {
+    const yearAgg = await prisma.diabetesObservation.aggregate({
+      where: baseWhere,
+      _max: { year: true },
+    });
+    targetYear = yearAgg._max.year ?? undefined;
+  }
+
+  if (targetYear === undefined) {
+    return {
+      dimension: input.dimension,
+      year: null,
+      data: [],
+    };
+  }
+
+  const whereForYear: Prisma.DiabetesObservationWhereInput = {
+    ...baseWhere,
+    year: { equals: targetYear },
+  };
+
+  const rows = await queryBreakdownByDimension(whereForYear, input.dimension);
+  const data = rows
+    .map((row) => {
+      const value = row._avg.estimate;
+      if (typeof value !== 'number') {
+        return null;
+      }
+
+      const label = getDimensionValue(
+        row as
+          | { age: string }
+          | { sex: string }
+          | { race: string }
+          | { education: string }
+          | { state: string }
+          | { indicator: string },
+        input.dimension
+      );
+
+      return {
+        label,
+        estimate: Number(value.toFixed(2)),
+        rowCount: row._count._all,
+      };
+    })
+    .filter((point): point is DiabetesBreakdownPoint => point !== null)
+    .sort((a, b) => b.estimate - a.estimate);
+
+  return {
+    dimension: input.dimension,
+    year: targetYear,
+    data,
+  };
 }

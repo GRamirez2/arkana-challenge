@@ -1,8 +1,12 @@
 import {
+  getMetricContext,
   getDatasetOverview,
   getFilterVocabulary,
+  queryCategoryBreakdown,
   queryYearlySeries,
+  type BreakdownDimension,
   type DatasetOverview,
+  type DiabetesBreakdownPoint,
   type FilterVocabulary,
   type DiabetesFilters,
 } from './diabetes-store.js';
@@ -20,15 +24,32 @@ export type VisualizationSpec = {
   title: string;
 };
 
+type ChartKind = 'line' | 'bar' | 'pie';
+type ValueFormat = 'percentage' | 'rate' | 'number';
+
+type ChartRenderSpec = VisualizationSpec & {
+  chartKind: ChartKind;
+  metricLabel: string;
+  valueFormat: ValueFormat;
+  subtitle?: string;
+};
+
+type BreakdownPayload = {
+  dimension: BreakdownDimension;
+  year: number | null;
+  data: DiabetesBreakdownPoint[];
+};
+
 export type DiabetesAssistantResponse = {
   answer: string;
   state: ConversationState;
-  render: VisualizationSpec;
+  render: ChartRenderSpec;
   series: Array<{
     year: number;
     estimate: number | null;
     rowCount: number;
   }>;
+  breakdown: BreakdownPayload | null;
   appliedFilters: DiabetesFilters;
 };
 
@@ -176,6 +197,101 @@ function parseYearRange(question: string, overview: DatasetOverview) {
   }
 
   return {};
+}
+
+function inferBreakdownDimension(
+  question: string
+): BreakdownDimension | undefined {
+  const normalized = normalizeText(question);
+
+  if (
+    normalized.includes('age group') ||
+    normalized.includes('by age') ||
+    normalized.includes('age breakdown')
+  ) {
+    return 'age';
+  }
+  if (
+    normalized.includes('male') ||
+    normalized.includes('female') ||
+    normalized.includes('sex') ||
+    normalized.includes('gender')
+  ) {
+    return 'sex';
+  }
+  if (
+    normalized.includes('race') ||
+    normalized.includes('ethnicity') ||
+    normalized.includes('hispanic') ||
+    normalized.includes('non hispanic')
+  ) {
+    return 'race';
+  }
+  if (normalized.includes('education')) {
+    return 'education';
+  }
+  if (
+    normalized.includes('by state') ||
+    normalized.includes('across states') ||
+    normalized.includes('which states')
+  ) {
+    return 'state';
+  }
+  if (
+    normalized.includes('indicator') ||
+    normalized.includes('type 1') ||
+    normalized.includes('type 2')
+  ) {
+    return 'indicator';
+  }
+
+  if (
+    normalized.includes('break down') ||
+    normalized.includes('breakdown') ||
+    normalized.includes('compare')
+  ) {
+    return 'age';
+  }
+
+  return undefined;
+}
+
+function inferValueFormat(unit?: string): ValueFormat {
+  if (!unit) {
+    return 'number';
+  }
+  if (unit.toLowerCase().includes('percentage')) {
+    return 'percentage';
+  }
+  if (unit.toLowerCase().includes('rate')) {
+    return 'rate';
+  }
+  return 'number';
+}
+
+function getRequestedChartKind(question: string): ChartKind | undefined {
+  const normalized = normalizeText(question);
+  if (normalized.includes('pie')) return 'pie';
+  if (normalized.includes('bar')) return 'bar';
+  if (normalized.includes('line')) return 'line';
+  return undefined;
+}
+
+function dimensionLabel(dimension: BreakdownDimension) {
+  switch (dimension) {
+    case 'age':
+      return 'Age group';
+    case 'sex':
+      return 'Sex';
+    case 'race':
+      return 'Race/ethnicity';
+    case 'education':
+      return 'Education';
+    case 'state':
+      return 'State';
+    case 'indicator':
+      return 'Indicator';
+  }
 }
 
 function heuristicPlan(
@@ -359,6 +475,79 @@ function buildDataAnswer(
   ).trim();
 }
 
+function buildBreakdownAnswer(input: {
+  filters: DiabetesFilters;
+  breakdown: BreakdownPayload;
+  valueFormat: ValueFormat;
+}) {
+  const { breakdown } = input;
+
+  if (breakdown.data.length === 0) {
+    const filterSummary = Object.entries(input.filters)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(', ');
+    return (
+      `No breakdown data found${filterSummary ? ` (${filterSummary})` : ''}. ` +
+      'Try broadening your search or removing a filter.'
+    );
+  }
+
+  const top = breakdown.data[0]!;
+  const valueSuffix =
+    input.valueFormat === 'percentage'
+      ? '%'
+      : input.valueFormat === 'rate'
+        ? ' per 1,000'
+        : '';
+  const yearText = breakdown.year ? ` for ${breakdown.year}` : '';
+
+  return `Showing ${breakdown.data.length} ${dimensionLabel(breakdown.dimension).toLowerCase()} categories${yearText}. Top category: ${top.label} at ${top.estimate.toFixed(1)}${valueSuffix}.`;
+}
+
+function buildMetricLabel(filters: DiabetesFilters) {
+  const metric = getMetricContext(filters);
+  const base = metric.indicator ? metric.indicator : 'Estimated value';
+  const unitPart = metric.unit ? ` (${metric.unit})` : '';
+  const popPart = metric.population ? ` - ${metric.population}` : '';
+  return `${base}${unitPart}${popPart}`;
+}
+
+function resolveChartKind(input: {
+  question: string;
+  seriesLength: number;
+  breakdown: BreakdownPayload | null;
+  valueFormat: ValueFormat;
+}): ChartKind {
+  const requested = getRequestedChartKind(input.question);
+  const allowPie = input.valueFormat === 'number';
+
+  if (
+    requested === 'pie' &&
+    allowPie &&
+    input.breakdown &&
+    input.breakdown.data.length >= 2
+  ) {
+    return input.breakdown.data.length <= 6 ? 'pie' : 'bar';
+  }
+
+  if (input.breakdown && input.breakdown.data.length >= 2) {
+    if (!allowPie) return 'bar';
+    if (requested === 'bar') return 'bar';
+    if (requested === 'line') return 'bar';
+    return input.breakdown.data.length <= 6 ? 'pie' : 'bar';
+  }
+
+  if (requested === 'bar') return 'bar';
+  if (requested === 'line') return 'line';
+
+  if (input.seriesLength <= 5) {
+    return 'bar';
+  }
+
+  return 'line';
+}
+
 export async function answerDiabetesQuestion(input: {
   question: string;
   state: ConversationState | undefined;
@@ -447,16 +636,65 @@ export async function answerDiabetesQuestion(input: {
   };
 
   const appliedFilters = mergedState.filters;
+  const breakdownDimension = inferBreakdownDimension(input.question);
+  const breakdownYear =
+    appliedFilters.yearMin !== undefined &&
+    appliedFilters.yearMax !== undefined &&
+    appliedFilters.yearMin === appliedFilters.yearMax
+      ? appliedFilters.yearMin
+      : undefined;
+
   const series = await queryYearlySeries(appliedFilters);
+  const breakdown = breakdownDimension
+    ? await queryCategoryBreakdown({
+        filters: appliedFilters,
+        dimension: breakdownDimension,
+        ...(breakdownYear !== undefined ? { year: breakdownYear } : {}),
+      })
+    : null;
+
+  const valueFormat = inferValueFormat(getMetricContext(appliedFilters).unit);
+  const chartKind = resolveChartKind({
+    question: input.question,
+    seriesLength: series.length,
+    breakdown,
+    valueFormat,
+  });
+  const metricLabel = buildMetricLabel(appliedFilters);
+  const renderTitle =
+    breakdown && breakdown.data.length > 0
+      ? `${dimensionLabel(breakdown.dimension)} breakdown`
+      : (planned.render?.title ?? 'Diabetes trend over time');
+
+  const answer =
+    breakdown && chartKind !== 'line'
+      ? buildBreakdownAnswer({
+          filters: appliedFilters,
+          breakdown,
+          valueFormat,
+        })
+      : buildDataAnswer(appliedFilters, series);
+
+  const renderSubtitle =
+    breakdown && breakdown.year
+      ? `Snapshot year: ${breakdown.year}`
+      : series.length > 0
+        ? `Years: ${series[0]?.year} to ${series[series.length - 1]?.year}`
+        : undefined;
 
   return {
-    answer: buildDataAnswer(appliedFilters, series),
+    answer,
     state: mergedState,
-    render: planned.render ?? {
+    render: {
       type: 'chart',
-      title: 'Diabetes trend over time',
+      title: renderTitle,
+      chartKind,
+      metricLabel,
+      valueFormat,
+      ...(renderSubtitle ? { subtitle: renderSubtitle } : {}),
     },
     series,
+    breakdown,
     appliedFilters,
   } satisfies DiabetesAssistantResponse;
 }
