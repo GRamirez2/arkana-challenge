@@ -688,7 +688,9 @@ onMounted(async () => {
               </div>
             </form>
 
-            <div class="rounded-3xl border border-white/10 bg-black p-4 text-white">
+            <div
+              class="rounded-3xl border border-white/10 bg-black p-4 text-white"
+            >
               <div
                 class="flex items-center gap-2 text-sm font-medium text-white"
               >
