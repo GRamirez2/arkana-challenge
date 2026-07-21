@@ -28,7 +28,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "npm run db:push && npm run seed"
+    entrypoint: ['/bin/sh', '-lc', 'npm run db:push && npm run seed']
     restart: 'no'
 
   backend:
@@ -49,7 +49,7 @@ services:
         condition: service_healthy
       db-init:
         condition: service_completed_successfully
-    command: npm start
+    command: ['dist/server.js']
     ports:
       - '3000:3000'
     healthcheck:

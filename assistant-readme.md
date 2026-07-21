@@ -5,99 +5,155 @@ This document explains what the assistant module does.
 ## What it is
 
 The assistant module is the orchestration layer for question answering.
-It takes a user question, decides which diabetes filters to apply, queries the data store, and returns both data and visualization instructions.
+It translates a user question into safe diabetes filters, executes data queries,
+and returns both a natural-language answer and chart instructions.
 
-## Main responsibilities
+## Responsibilities at a glance
 
-1. Accept user input and conversation state
+1. Accept request context
 
-- Receives the latest question.
-- Receives prior state (existing filters, prior render mode, turn count).
-- Receives an optional OpenAI API key override.
+- Input includes question, optional prior conversation state, and optional OpenAI key override.
 
-2. Load dataset context before planning
+2. Gather dataset guardrails
 
-- Fetches dataset overview (year range, sample indicators/states, counts).
-- Fetches filter vocabulary (valid indicator/state/topic/age/race/sex/education values).
+- Loads dataset overview and allowed filter vocabulary before planning.
+- This constrains planning to known values and reduces invalid filter proposals.
 
-This gives the planner a valid set of values to work with.
+3. Plan intent (model-first, deterministic fallback)
 
-3. Plan filters and render intent
+- Attempts OpenAI planning first.
+- Falls back to local heuristics when model planning is unavailable or fails.
 
-- Primary path: tries OpenAI-based planning.
-  - The prompt enforces strict constraints (use known vocabulary, preserve prior filters unless explicitly changed, avoid invalid structures).
-- Fallback path: if OpenAI planning is unavailable or fails, uses local heuristics.
-  - Heuristics parse state names, demographic terms, indicator mentions, year constraints, and table/chart intent.
+4. Enforce runtime safety on planned filters
 
-4. Sanitize planner output for runtime safety
+- Treats planner output as untrusted runtime data.
+- Normalizes invalid shapes/types and drops empty values before querying.
 
-Planner output is treated as untrusted at runtime, even if compile-time types look correct.
+5. Merge and persist conversation state
 
-- Converts invalid shapes to safe values.
-  - Example: array filters become one value.
-  - Example: numeric strings for years are parsed to numbers.
-- Drops empty/invalid values.
+- Applies sanitized filter changes over prior state.
+- Updates turn metadata (last question/answer/render and turn count).
 
-This prevents Prisma query crashes (for example, when a model returns an array for a scalar field).
+6. Query and shape result data
 
-5. Merge with conversational state
+- Always queries yearly trend data.
+- Optionally queries breakdown data for comparison questions (age, sex, race, education, state, indicator).
 
-- Applies sanitized filter changes over existing state filters.
-- Updates:
-  - lastQuestion
-  - lastAnswer (planning note)
-  - lastRender
-  - turnCount
+7. Compute render policy and answer text
 
-6. Run data queries
+- Resolves chart kind (line/bar/pie), value format, labels, and subtitle.
+- Builds a concise answer for trend, breakdown, or no-data scenarios.
 
-- Always runs a yearly time-series query with the applied filters.
-- Optionally runs a breakdown query when the question implies comparison/breakdown.
-  - Supported breakdown dimensions: age, sex, race, education, state, indicator.
-  - If a single year is implied (yearMin equals yearMax), uses that year directly.
+8. Return one structured payload
 
-7. Decide chart behavior and labels
-
-- Infers value format from metric unit:
-  - percentage
-  - rate
-  - number
-- Selects chart kind intelligently:
-  - line/bar/pie based on request and data shape.
-  - avoids invalid pie selections (for example, unsupported values or too many slices).
-- Builds metric labels and subtitle text (year range or snapshot year).
-
-8. Build the final human-readable answer
-
-- For trend views: summarizes time range, latest estimate, and trend direction/magnitude.
-- For breakdown views: summarizes category count and top category.
-- For no-data cases: returns a clear message and suggests broadening filters.
-
-9. Return one structured response payload
-
-The final payload includes:
-
-- answer (natural language summary)
-- updated conversation state
-- render spec (chart type, labels, format)
-- yearly series data
-- optional breakdown data
-- applied filters
-
-## Key supporting behaviors
-
-- Text normalization and candidate matching:
-  - case-insensitive matching
-  - punctuation-insensitive parsing
-  - state alias mapping (full state names to abbreviations)
-- Year parsing:
-  - explicit year or year range
-  - "latest"/"recent" handling
-  - "since YYYY" handling
-- Breakdown inference:
-  - detects comparison intent and maps to the most likely demographic dimension.
+- answer, state, render, series, breakdown, appliedFilters.
 
 ## In short
 
-The assistant module is the conversation brain, not the data source itself.
-It translates natural-language intent into safe filters, executes diabetes-store queries, and returns data plus presentation guidance the frontend can render immediately.
+This module coordinates planning, safety checks, data queries, and render policy.
+The data access logic itself remains in `diabetes-store`; the assistant composes those pieces into one response.
+
+## Architecture intent
+
+The four explicit layers:
+
+1. LLM planning boundary
+
+- File: `backend/src/assistant-planner.ts`
+- Purpose: translate question + prior state into a planner result (`answer`, `filters`, `render`).
+- Contains both:
+  - OpenAI adapter (`planWithOpenAI`) for model-based planning.
+  - Local deterministic fallback (`heuristicPlan`) when no key is present or model calls fail.
+
+2. State safety boundary
+
+- File: `backend/src/assistant-state.ts`
+- Purpose: treat planner output as untrusted runtime input.
+- Responsibilities:
+  - sanitize filter shapes/types (`sanitizePlannerFilters`)
+  - merge prior + new state (`mergeConversationState`)
+
+3. Response/render policy boundary
+
+- File: `backend/src/assistant-response.ts`
+- Purpose: decide how to explain and visualize query results.
+- Responsibilities:
+  - infer breakdown dimension
+  - infer value format
+  - choose chart kind
+  - build human-readable trend/breakdown summaries
+
+4. Orchestration boundary
+
+- File: `backend/src/assistant.ts`
+- Purpose: workflow glue only.
+- Responsibilities:
+  - load overview + vocabulary
+  - select planner path
+  - sanitize + merge state
+  - run store queries
+  - assemble the final response payload
+
+### Request lifecycle
+
+1. Frontend sends `question`, optional `state`, optional `openAiApiKey`.
+2. `assistant.ts` loads dataset context from `diabetes-store`.
+3. Planner module returns a proposed plan (OpenAI or heuristic).
+4. State module sanitizes planner filters and merges conversation state.
+5. Store queries run with applied filters (yearly series, optional breakdown).
+6. Response module computes answer text + chart policy.
+7. `assistant.ts` returns one structured payload: `answer`, `state`, `render`, `series`, `breakdown`, `appliedFilters`.
+
+### Sequence diagram
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant UI as frontend/App.vue
+  participant API as frontend/lib/api.ts
+  participant RPC as backend/router.ts (chat)
+  participant AST as backend/assistant.ts
+  participant PLN as backend/assistant-planner.ts
+  participant ST as backend/assistant-state.ts
+  participant DS as backend/diabetes-store.ts
+  participant RSP as backend/assistant-response.ts
+  participant CH as frontend/components/series-chart.vue
+
+  UI->>API: sendDiabetesQuestion(question, state, openAiApiKey?)
+  API->>RPC: oRPC diabetes.chat
+  RPC->>AST: answerDiabetesQuestion(input)
+
+  AST->>DS: getDatasetOverview()
+  AST->>DS: getFilterVocabulary()
+
+  alt API key available and OpenAI succeeds
+    AST->>PLN: planWithOpenAI(question, state, overview, vocabulary)
+  else fallback path
+    AST->>PLN: heuristicPlan(question, state, overview, vocabulary)
+  end
+
+  AST->>ST: sanitizePlannerFilters(planned)
+  AST->>ST: mergeConversationState(previousState, planned, sanitized)
+
+  AST->>DS: queryYearlySeries(appliedFilters)
+  opt breakdown intent detected
+    AST->>DS: queryCategoryBreakdown(appliedFilters, dimension, year?)
+  end
+
+  AST->>RSP: inferBreakdownDimension(question)
+  AST->>RSP: inferValueFormat(unit)
+  AST->>RSP: resolveChartKind(question, series, breakdown)
+  AST->>RSP: buildDataAnswer(...) or buildBreakdownAnswer(...)
+
+  AST-->>RPC: DiabetesAssistantResponse
+  RPC-->>API: response payload
+  API-->>UI: assistant + updated state
+  UI->>CH: render(series, breakdown, renderSpec)
+```
+
+### Why this split matters
+
+- LLM boundary is explicit and replaceable.
+- Data access stays in first-party code (`diabetes-store`), not in model output.
+- Render logic is deterministic and reviewable.
+- Conversation state transitions are centralized and testable.

@@ -24,6 +24,8 @@ RUN npm run build --workspace frontend
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/frontend/dist /usr/share/nginx/html
+COPY --from=build --chown=101:101 /app/frontend/dist /usr/share/nginx/html
+
+USER 101:101
 
 EXPOSE 8080
