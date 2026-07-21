@@ -2,6 +2,8 @@
 
 Conversational diabetes explorer for the Arkana Labs take-home.
 
+> **Video walkthrough:** https://share.zight.com/geuNqvxE
+
 ## What it does
 
 - Loads the CSV in `backend/data/` into a local PostgreSQL database through Prisma.
