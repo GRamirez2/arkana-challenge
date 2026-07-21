@@ -59,6 +59,10 @@ type PlannerResult = {
   render?: VisualizationSpec;
 };
 
+/**
+ * Normalizes free-text input for lightweight intent and token matching.
+ * Converts to lowercase and strips punctuation while preserving spaces and '+' tokens.
+ */
 function normalizeText(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9+ ]/g, ' ');
 }
@@ -117,6 +121,10 @@ const US_STATE_ALIASES: Record<string, string> = {
   'district of columbia': 'DC',
 };
 
+/**
+ * Finds the best matching candidate string in a question.
+ * Short single-token candidates (for example state codes) are matched on word boundaries.
+ */
 function matchesCandidate(question: string, candidates: string[]) {
   const normalizedQuestion = normalizeText(question);
   const orderedCandidates = [...candidates].sort(
@@ -137,6 +145,10 @@ function matchesCandidate(question: string, candidates: string[]) {
     }
 
     return normalizedQuestion.includes(normalizedCandidate);
+      /**
+       * Matches a US state from either full-name aliases or direct candidate values.
+       * Returns the state code when an alias is found and supported by available candidates.
+       */
   });
 }
 
@@ -157,6 +169,10 @@ function matchStateCandidate(question: string, candidates: string[]) {
   return matchesCandidate(question, candidates);
 }
 
+/**
+ * Extracts year filtering intent from the question.
+ * Supports explicit years, ranges, "latest/recent", and "since YYYY" patterns.
+ */
 function parseYearRange(question: string, overview: DatasetOverview) {
   const years = question.match(/\b(19|20)\d{2}\b/g)?.map(Number) ?? [];
 
@@ -199,6 +215,10 @@ function parseYearRange(question: string, overview: DatasetOverview) {
   return {};
 }
 
+/**
+ * Infers whether the user is asking for a categorical breakdown and by which dimension.
+ * Uses explicit wording first, then falls back to conservative defaults for comparison phrasing.
+ */
 function inferBreakdownDimension(
   question: string
 ): BreakdownDimension | undefined {
@@ -292,6 +312,9 @@ function inferBreakdownDimension(
   return undefined;
 }
 
+/**
+ * Maps a metric unit string to the value formatting strategy used in responses and charts.
+ */
 function inferValueFormat(unit?: string): ValueFormat {
   if (!unit) {
     return 'number';
@@ -305,6 +328,9 @@ function inferValueFormat(unit?: string): ValueFormat {
   return 'number';
 }
 
+/**
+ * Detects an explicitly requested chart type from the user question.
+ */
 function getRequestedChartKind(question: string): ChartKind | undefined {
   const normalized = normalizeText(question);
   if (normalized.includes('pie')) return 'pie';
@@ -313,6 +339,9 @@ function getRequestedChartKind(question: string): ChartKind | undefined {
   return undefined;
 }
 
+/**
+ * Converts a breakdown dimension key into a human-readable label for UI text.
+ */
 function dimensionLabel(dimension: BreakdownDimension) {
   switch (dimension) {
     case 'age':
@@ -330,6 +359,10 @@ function dimensionLabel(dimension: BreakdownDimension) {
   }
 }
 
+/**
+ * Builds a deterministic fallback plan when no LLM plan is available.
+ * Carries forward prior state filters and applies directly detectable values from the question.
+ */
 function heuristicPlan(
   question: string,
   state: ConversationState | undefined,
@@ -381,6 +414,10 @@ function heuristicPlan(
   };
 }
 
+/**
+ * Requests an LLM-generated planning object (answer/filter/render) for the current turn.
+ * Returns null when no API key is available and throws for transport/protocol failures.
+ */
 async function planWithOpenAI(
   question: string,
   state: ConversationState | undefined,
@@ -449,6 +486,10 @@ async function planWithOpenAI(
   return JSON.parse(content) as PlannerResult;
 }
 
+/**
+ * Builds a narrative summary from yearly time-series results.
+ * Includes coverage range, latest estimate, and trend direction/magnitude when comparable points exist.
+ */
 function buildDataAnswer(
   filters: DiabetesFilters,
   series: Array<{ year: number; estimate: number | null; rowCount: number }>,
@@ -540,6 +581,10 @@ function buildDataAnswer(
   ).trim();
 }
 
+/**
+ * Builds a concise summary for categorical breakdown results.
+ * Highlights the number of categories and the top category in the selected year/scope.
+ */
 function buildBreakdownAnswer(input: {
   filters: DiabetesFilters;
   breakdown: BreakdownPayload;
@@ -570,6 +615,9 @@ function buildBreakdownAnswer(input: {
   return `Showing ${breakdown.data.length} ${dimensionLabel(breakdown.dimension).toLowerCase()} categories${yearText}. Top category: ${top.label} at ${top.estimate.toFixed(1)}${valueSuffix}.`;
 }
 
+/**
+ * Composes the display label for the metric shown in charts based on active filters.
+ */
 function buildMetricLabel(filters: DiabetesFilters) {
   const metric = getMetricContext(filters);
   const base = metric.indicator ? metric.indicator : 'Estimated value';
@@ -578,6 +626,10 @@ function buildMetricLabel(filters: DiabetesFilters) {
   return `${base}${unitPart}${popPart}`;
 }
 
+/**
+ * Chooses the most appropriate chart kind for the requested view and available data shape.
+ * Prevents unsupported pie charts and defaults to readable fallbacks.
+ */
 function resolveChartKind(input: {
   question: string;
   seriesLength: number;
@@ -614,6 +666,11 @@ function resolveChartKind(input: {
   return 'line';
 }
 
+/**
+ * Orchestrates one assistant turn end-to-end.
+ * Plans filters, sanitizes planner output, queries data, selects render settings,
+ * and returns the response payload plus updated conversation state.
+ */
 export async function answerDiabetesQuestion(input: {
   question: string;
   state: ConversationState | undefined;
@@ -652,6 +709,10 @@ export async function answerDiabetesQuestion(input: {
     'otherStratification',
   ] as const;
 
+  /**
+   * Normalizes a text filter value from planner output to a single non-empty string.
+   * Accepts accidental arrays by taking the first element.
+   */
   function sanitizeTextValue(value: unknown): string | undefined {
     if (typeof value === 'string') {
       const trimmed = value.trim();
@@ -663,6 +724,10 @@ export async function answerDiabetesQuestion(input: {
     return undefined;
   }
 
+  /**
+   * Normalizes a year filter value to a finite number.
+   * Accepts numeric strings and accidental arrays by taking the first element.
+   */
   function sanitizeYearValue(value: unknown): number | undefined {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return value;
