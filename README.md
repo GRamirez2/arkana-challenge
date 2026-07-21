@@ -12,6 +12,12 @@ Conversational diabetes explorer for the Arkana Labs take-home.
 
 ## Docker
 
+From your terminal, first change into this repository's root folder:
+
+```bash
+cd arkana-challenge
+```
+
 Start both apps with:
 
 ```bash
@@ -40,6 +46,8 @@ docker-compose logs -f    # follow container logs
 ```
 
 The compose setup builds production images, applies the Prisma schema with a one-shot init container, starts the backend on port `3000`, and serves the compiled frontend through nginx on port `8080`.
+
+Once the stack is up, open `http://localhost:8080` to use the app.
 
 ### Workspace lockfiles
 
@@ -74,6 +82,9 @@ The frontend stores a user-submitted OpenAI key in `sessionStorage` for the curr
 ## How to explore the data
 
 The app answers natural language questions about a CDC diabetes dataset covering all 50 U.S. states + DC from 2000–2024. Each question updates the chart and keeps context for follow-ups.
+
+Dataset source: CDC, "USDSS State Burden/Magnitude Diabetes Indicators".
+About this dataset: https://data.cdc.gov/U-S-Diabetes-Surveillance-System/USDSS-State-Burden-Magnitude-Diabetes-Indicators/b559-sbez/about_data
 
 ### VISUALIZATION
 

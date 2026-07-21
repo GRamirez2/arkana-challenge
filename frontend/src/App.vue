@@ -615,6 +615,30 @@ onMounted(async () => {
               </div>
             </form>
 
+            <div class="rounded-3xl border border-white/10 bg-slate-950/60 p-4">
+              <div
+                class="flex items-center gap-2 text-sm font-medium text-slate-200"
+              >
+                <Activity class="h-4 w-4 text-cyan-300" />
+                Current conversation state
+              </div>
+              <div
+                v-if="conversationState"
+                class="mt-4 space-y-3 text-sm text-slate-300"
+              >
+                <p>Turns: {{ conversationState.turnCount }}</p>
+                <p v-if="conversationState.lastQuestion">
+                  Last question: {{ conversationState.lastQuestion }}
+                </p>
+                <p v-if="conversationState.lastAnswer">
+                  Last answer: {{ conversationState.lastAnswer }}
+                </p>
+              </div>
+              <p v-else class="mt-4 text-sm text-slate-400">
+                Ask a question to create the first state snapshot.
+              </p>
+            </div>
+
             <div class="space-y-3">
               <p
                 class="text-xs font-semibold uppercase tracking-[0.22em] text-black"
@@ -667,30 +691,6 @@ onMounted(async () => {
                   </ul>
                 </div>
               </div>
-            </div>
-
-            <div class="rounded-3xl border border-white/10 bg-slate-950/60 p-4">
-              <div
-                class="flex items-center gap-2 text-sm font-medium text-slate-200"
-              >
-                <Activity class="h-4 w-4 text-cyan-300" />
-                Current conversation state
-              </div>
-              <div
-                v-if="conversationState"
-                class="mt-4 space-y-3 text-sm text-slate-300"
-              >
-                <p>Turns: {{ conversationState.turnCount }}</p>
-                <p v-if="conversationState.lastQuestion">
-                  Last question: {{ conversationState.lastQuestion }}
-                </p>
-                <p v-if="conversationState.lastAnswer">
-                  Last answer: {{ conversationState.lastAnswer }}
-                </p>
-              </div>
-              <p v-else class="mt-4 text-sm text-slate-400">
-                Ask a question to create the first state snapshot.
-              </p>
             </div>
 
             <div v-if="activeFilters.length > 0" class="space-y-3">
