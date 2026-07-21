@@ -98,6 +98,8 @@ This keeps Docker builds reproducible while preserving the single-lockfile works
 - `CORS_ORIGINS`: optional comma-separated browser origin allowlist for backend CORS (for example `https://app.example.com,http://localhost:5173`). Requests without an `Origin` header are still allowed.
 - `VITE_API_BASE_URL`: optional frontend override for the backend URL.
 
+To override the default model during review, copy `.env.example` to `.env` locally and set `OPENAI_MODEL`.
+
 The frontend stores a user-submitted OpenAI key in `sessionStorage` for the current browser tab only. If the user skips the key prompt, the app still works with the local planner.
 
 ## How to explore the data
