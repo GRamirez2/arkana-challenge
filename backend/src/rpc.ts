@@ -57,10 +57,7 @@ export const buildApp = () => {
         return;
       }
 
-      callback(
-        new Error(`Origin ${normalizedOrigin} is not allowed by CORS`),
-        false
-      );
+      callback(null, false);
     },
   });
 
