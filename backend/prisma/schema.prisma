@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DiabetesObservation {
+  id                  Int     @id @default(autoincrement())
+  state               String
+  year                Int
+  topic               String
+  indicator           String
+  unit                String
+  estimate            Float?
+  seEstimate          Float?  @map("se_estimate")
+  lowerLimit          Float?  @map("lower_limit")
+  upperLimit          Float?  @map("upper_limit")
+  estimateFootnote    String? @map("estimate_footnote")
+  dataSource          String  @map("data_source")
+  population          String
+  age                 String
+  race                String
+  sex                 String
+  education           String
+  otherStratification String  @map("other_stratification")
+
+  @@map("diabetes_observations")
+  @@index([year])
+  @@index([state])
+  @@index([indicator])
+}
