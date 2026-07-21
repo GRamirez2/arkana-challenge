@@ -642,7 +642,7 @@ onMounted(async () => {
                 rows="4"
                 :disabled="loadingAnswer"
                 :aria-busy="loadingAnswer"
-                class="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-4 text-base leading-7 text-white outline-none transition placeholder:text-slate-300 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:border-cyan-300/25 disabled:bg-slate-900/80 disabled:text-slate-400"
+                class="w-full rounded-3xl border border-white/10 bg-black px-4 py-4 text-base leading-7 text-white outline-none transition placeholder:text-white/70 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:border-cyan-300/25 disabled:bg-black/80 disabled:text-white/60"
                 :placeholder="
                   loadingAnswer
                     ? 'Running query... input is temporarily locked.'
@@ -660,7 +660,7 @@ onMounted(async () => {
                 <Button
                   type="submit"
                   :disabled="loadingAnswer"
-                  class="min-w-[180px]"
+                  class="w-full !bg-green-600 !text-white hover:!bg-green-500"
                 >
                   <RefreshCcw
                     class="mr-2 h-4 w-4"
@@ -688,16 +688,16 @@ onMounted(async () => {
               </div>
             </form>
 
-            <div class="rounded-3xl border border-white/10 bg-slate-950/60 p-4">
+            <div class="rounded-3xl border border-white/10 bg-black p-4 text-white">
               <div
-                class="flex items-center gap-2 text-sm font-medium text-slate-200"
+                class="flex items-center gap-2 text-sm font-medium text-white"
               >
                 <Activity class="h-4 w-4 text-cyan-300" />
                 Current conversation state
               </div>
               <div
                 v-if="conversationState"
-                class="mt-4 space-y-3 text-sm text-slate-300"
+                class="mt-4 space-y-3 text-sm text-white/85"
               >
                 <p>Turns: {{ conversationState.turnCount }}</p>
                 <p v-if="conversationState.lastQuestion">
@@ -707,7 +707,7 @@ onMounted(async () => {
                   Last answer: {{ conversationState.lastAnswer }}
                 </p>
               </div>
-              <p v-else class="mt-4 text-sm text-slate-400">
+              <p v-else class="mt-4 text-sm text-white/75">
                 Ask a question to create the first state snapshot.
               </p>
             </div>

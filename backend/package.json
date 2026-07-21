@@ -11,7 +11,7 @@
     "db:push": "prisma db push",
     "seed": "tsx src/scripts/seed-db.ts",
     "seed:reset": "tsx src/scripts/seed-db.ts --reset",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --import tsx --test src/assistant-response.test.ts",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js"

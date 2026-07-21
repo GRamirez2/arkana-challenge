@@ -56,6 +56,7 @@ export function inferBreakdownDimension(
   const explicitIndicatorBreakdown =
     normalized.includes('by indicator') ||
     normalized.includes('indicator breakdown');
+  const mentionsYear = /\b(19|20)\d{2}\b/.test(normalized);
 
   const hasBreakdownIntent =
     asksForComparison ||
@@ -106,7 +107,14 @@ export function inferBreakdownDimension(
     return 'indicator';
   }
 
-  if (asksForBreakdown || asksForComparison) {
+  // For generic "compare" prompts that only mention years (for example,
+  // "Compare 2019 to 2024"), keep a time-series view instead of forcing an
+  // age snapshot breakdown.
+  if (asksForBreakdown) {
+    return 'age';
+  }
+
+  if (asksForComparison && !mentionsYear) {
     return 'age';
   }
 
