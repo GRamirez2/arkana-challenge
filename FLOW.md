@@ -357,3 +357,32 @@ Those two investments improve confidence and shorten debugging loops the most.
 ### One-Line Summary
 
 The request starts in askQuestion in App, goes through lib/api RPC calls to the backend, returns into assistant and conversationState refs, and then gets rendered in SeriesChart and the transcript UI.
+
+---
+
+---
+
+## How context carries forward between questions
+
+In this app, follow-up context is carried forward by sending a **state object** on every new question, not by sending the full chat transcript to the backend.
+
+### What persists between turns
+
+1. filters (main thing that drives follow-ups)
+2. lastQuestion
+3. lastAnswer
+4. lastRender
+5. turnCount
+
+### How it works
+
+1. The frontend keeps the latest conversationState in memory.
+2. On the next question, the frontend includes that state in the request.
+3. The backend planner uses question + state to decide updated filters.
+4. The backend merges previous filters with new/sanitized filters, so old filters persist unless explicitly overridden.
+
+### Important nuance
+
+1. If a query returns no data, the frontend rolls filters back to the previous valid filters so bad filters do not carry into future turns.
+2. The transcript shown in the UI is mainly for display; it is not the primary context mechanism for backend follow-ups.
+3. This is session-level memory in the running app, not long-term persisted conversation memory in a database. On page reload, conversation state resets (except API key, which is stored in sessionStorage).
